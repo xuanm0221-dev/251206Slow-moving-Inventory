@@ -1,0 +1,233 @@
+"use client";
+
+import { InventoryItemTabData, SalesItemTabData } from "@/types/sales";
+import { cn } from "@/lib/utils";
+
+interface StockWeeksTableProps {
+  inventoryData: InventoryItemTabData;
+  salesData: SalesItemTabData;
+  daysInMonth: { [month: string]: number };
+  stockWeek: number;
+  year: "2024" | "2025";
+}
+
+const MONTHS_2024 = [
+  "2024.01", "2024.02", "2024.03", "2024.04", "2024.05", "2024.06",
+  "2024.07", "2024.08", "2024.09", "2024.10", "2024.11", "2024.12"
+];
+
+const MONTHS_2025 = [
+  "2025.01", "2025.02", "2025.03", "2025.04", "2025.05", "2025.06",
+  "2025.07", "2025.08", "2025.09", "2025.10", "2025.11", "2025.12"
+];
+
+const STOCK_WEEKS_ROWS = [
+  { label: "전체주수", isHeader: true, indent: false, type: "total", hasHeatmap: false },
+  { label: "ㄴ 주력상품", isHeader: false, indent: true, type: "total_core", hasHeatmap: true },
+  { label: "ㄴ 아울렛상품", isHeader: false, indent: true, type: "total_outlet", hasHeatmap: true },
+  { label: "대리상주수", isHeader: true, indent: false, type: "frs", hasHeatmap: false },
+  { label: "ㄴ 주력상품", isHeader: false, indent: true, type: "frs_core", hasHeatmap: true },
+  { label: "ㄴ 아울렛상품", isHeader: false, indent: true, type: "frs_outlet", hasHeatmap: true },
+  { label: "창고재고주수", isHeader: true, indent: false, type: "warehouse", hasHeatmap: false },
+  { label: "ㄴ 주력상품", isHeader: false, indent: true, type: "warehouse_core", hasHeatmap: true },
+  { label: "ㄴ 아울렛상품", isHeader: false, indent: true, type: "warehouse_outlet", hasHeatmap: true },
+];
+
+// 히트맵 색상 결정 함수 (인라인 스타일 - Tailwind purge 방지)
+function getHeatmapStyle(weeks: number): React.CSSProperties {
+  if (weeks < 35) {
+    return { backgroundColor: '#dcfce7' }; // green-100
+  } else if (weeks >= 35 && weeks <= 40) {
+    return { backgroundColor: '#fef9c3' }; // yellow-100
+  } else if (weeks >= 41 && weeks <= 45) {
+    return { backgroundColor: '#ffedd5' }; // orange-100
+  } else if (weeks >= 46 && weeks <= 52) {
+    return { backgroundColor: '#fee2e2' }; // red-100
+  } else {
+    return { backgroundColor: '#fecaca' }; // red-200 (53주 이상)
+  }
+}
+
+export default function StockWeeksTable({ 
+  inventoryData, 
+  salesData, 
+  daysInMonth, 
+  stockWeek,
+  year 
+}: StockWeeksTableProps) {
+  const months = year === "2024" ? MONTHS_2024 : MONTHS_2025;
+  
+  const calculateWeeks = (inventory: number, sales: number, days: number): { display: string; value: number } => {
+    if (sales === 0) {
+      return { display: "판매0", value: -1 };
+    }
+    const dailySales = sales / days;
+    const weeklySales = dailySales * 7;
+    if (weeklySales === 0) {
+      return { display: "판매0", value: -1 };
+    }
+    const weeks = inventory / weeklySales;
+    return { display: `${weeks.toFixed(1)}주`, value: weeks };
+  };
+
+  const calculateRetailStock = (orSales: number, days: number): number => {
+    if (days === 0) return 0;
+    return (orSales / days) * 7 * stockWeek;
+  };
+
+  const getCellData = (month: string, rowType: string): { display: string; value: number } => {
+    const invData = inventoryData[month];
+    const slsData = salesData[month];
+    const days = daysInMonth[month];
+
+    if (!invData || !slsData || !days) {
+      return { display: "-", value: -1 };
+    }
+
+    const totalStockCore = invData.전체_core || 0;
+    const totalStockOutlet = invData.전체_outlet || 0;
+    const frsStockCore = invData.FRS_core || 0;
+    const frsStockOutlet = invData.FRS_outlet || 0;
+    const hqOrStockCore = invData.HQ_OR_core || 0;
+    const hqOrStockOutlet = invData.HQ_OR_outlet || 0;
+
+    const orSalesCore = invData.OR_sales_core || 0;
+    const orSalesOutlet = invData.OR_sales_outlet || 0;
+
+    const retailStockCore = calculateRetailStock(orSalesCore, days) / 1_000_000;
+    const retailStockOutlet = calculateRetailStock(orSalesOutlet, days) / 1_000_000;
+
+    const warehouseStockCore = hqOrStockCore - retailStockCore;
+    const warehouseStockOutlet = hqOrStockOutlet - retailStockOutlet;
+
+    const totalSalesCore = slsData.전체_core || 0;
+    const totalSalesOutlet = slsData.전체_outlet || 0;
+    const frsSalesCore = slsData.FRS_core || 0;
+    const frsSalesOutlet = slsData.FRS_outlet || 0;
+
+    switch (rowType) {
+      case "total":
+        return calculateWeeks(
+          totalStockCore + totalStockOutlet,
+          totalSalesCore + totalSalesOutlet,
+          days
+        );
+      case "total_core":
+        return calculateWeeks(totalStockCore, totalSalesCore, days);
+      case "total_outlet":
+        return calculateWeeks(totalStockOutlet, totalSalesOutlet, days);
+
+      case "frs":
+        return calculateWeeks(
+          frsStockCore + frsStockOutlet,
+          frsSalesCore + frsSalesOutlet,
+          days
+        );
+      case "frs_core":
+        return calculateWeeks(frsStockCore, frsSalesCore, days);
+      case "frs_outlet":
+        return calculateWeeks(frsStockOutlet, frsSalesOutlet, days);
+
+      case "warehouse":
+        return calculateWeeks(
+          warehouseStockCore + warehouseStockOutlet,
+          totalSalesCore + totalSalesOutlet,
+          days
+        );
+      case "warehouse_core":
+        return calculateWeeks(warehouseStockCore, totalSalesCore, days);
+      case "warehouse_outlet":
+        return calculateWeeks(warehouseStockOutlet, totalSalesOutlet, days);
+
+      default:
+        return { display: "-", value: -1 };
+    }
+  };
+
+  const getMonthHeader = (month: string): string => {
+    const monthNum = parseInt(month.split(".")[1], 10);
+    return `${monthNum}월`;
+  };
+
+  return (
+    <div>
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="sales-table min-w-max">
+          <thead>
+            <tr>
+              <th className="text-left min-w-[120px] sticky left-0 bg-gray-100 z-20">
+                구분
+              </th>
+              {months.map((month) => (
+                <th key={month} className="min-w-[70px]">
+                  {getMonthHeader(month)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {STOCK_WEEKS_ROWS.map((row, idx) => (
+              <tr key={idx}>
+                <td
+                  className={cn(
+                    "text-left sticky left-0 bg-white z-10",
+                    row.isHeader && "row-header font-semibold text-gray-800",
+                    row.indent && "row-indent"
+                  )}
+                >
+                  {row.label}
+                </td>
+                {months.map((month) => {
+                  const cellData = getCellData(month, row.type);
+                  const isNoData = cellData.display === "-";
+                  const isZeroSales = cellData.display === "판매0";
+                  const hasHeatmap = row.hasHeatmap && cellData.value >= 0;
+                  
+                  return (
+                    <td
+                      key={month}
+                      className={cn(
+                        "text-center",
+                        row.isHeader && "row-header font-semibold",
+                        isNoData && "text-gray-400",
+                        isZeroSales && "text-amber-600 text-xs"
+                      )}
+                      style={hasHeatmap ? getHeatmapStyle(cellData.value) : undefined}
+                    >
+                      {cellData.display}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 히트맵 범례 */}
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-600">
+        <span className="font-medium">재고주수:</span>
+        <div className="flex items-center gap-1">
+          <span className="w-4 h-4 bg-green-100 border border-gray-300 rounded"></span>
+          <span>~35주</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="w-4 h-4 bg-yellow-100 border border-gray-300 rounded"></span>
+          <span>36-40주</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="w-4 h-4 bg-orange-100 border border-gray-300 rounded"></span>
+          <span>41-45주</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="w-4 h-4 bg-red-100 border border-gray-300 rounded"></span>
+          <span>46-52주</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="w-4 h-4 bg-red-200 border border-gray-300 rounded"></span>
+          <span>53주~</span>
+        </div>
+      </div>
+    </div>
+  );
+}
