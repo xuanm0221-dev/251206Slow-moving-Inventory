@@ -58,7 +58,7 @@ const ITEM_LABELS: Record<ItemTab, string> = {
 const CHANNEL_LABELS: Record<ChannelTab, string> = {
   ALL: "전체",
   FRS: "대리상",
-  창고: "창고",
+  창고: "본사물류",
 };
 
 export default function InventoryChart({
@@ -223,14 +223,14 @@ export default function InventoryChart({
                 style: { fontSize: 12, fill: "#6b7280" }
               }}
             />
-            {/* 오른쪽 Y축: 판매매출 (M) - 동적 범위 */}
+            {/* 오른쪽 Y축: 판매매출 (M) - 동적 범위 (2배로 확대하여 막대기 길이를 반으로) */}
             <YAxis 
               yAxisId="right"
               orientation="right"
               tick={{ fontSize: 12, fill: "#6B7280" }}
               axisLine={{ stroke: "#6B7280" }}
               tickFormatter={formatYAxis}
-              domain={[0, maxSales]}  // 아이템별 판매매출 최대값에 맞춰 동적 조정
+              domain={[0, maxSales * 2]}  // Y축 범위를 2배로 확대하여 막대기 길이를 상대적으로 반으로
               label={{ 
                 value: "판매매출 (M)", 
                 angle: 90, 

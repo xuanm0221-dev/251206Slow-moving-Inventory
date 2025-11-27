@@ -36,15 +36,16 @@ const BRAND_LIGHT_COLORS: Record<Brand, string> = {
   "DISCOVERY": "#F5FDF9",  // 더 밝은 초록
 };
 
-// Summary 행 정의 (새 구조: 전체 → 주력/아울렛 → 대리상/창고)
+// Summary 행 정의 (새 구조: 전체 → 주력/아울렛 → 대리상/본사물류/직영)
 const SUMMARY_ROWS = [
   { label: "전체주수", level: 0, type: "total" },           // 헤더 level 0
   { label: "ㄴ 주력상품", level: 1, type: "total_core" },   // 헤더 level 1
   { label: "- 대리상", level: 2, type: "frs_core" },        // 상세 level 2
-  { label: "- 창고", level: 2, type: "warehouse_core" },    // 상세 level 2
+  { label: "- 본사물류", level: 2, type: "warehouse_core" },    // 상세 level 2
+  { label: "- 직영", level: 2, type: "retail_core" },        // 상세 level 2 (새로 추가)
   { label: "ㄴ 아울렛상품", level: 1, type: "total_outlet" }, // 헤더 level 1
   { label: "- 대리상", level: 2, type: "frs_outlet" },      // 상세 level 2
-  { label: "- 창고", level: 2, type: "warehouse_outlet" },  // 상세 level 2
+  { label: "- 본사물류", level: 2, type: "warehouse_outlet" },  // 상세 level 2
 ];
 
 // 2025년 월 옵션
@@ -166,6 +167,12 @@ export default function StockWeeksSummary({
         const orSalesOutletM = orSalesOutlet / 1_000_000;
         weeks = calculateWeeks(warehouseStockOutlet, orSalesOutletM, days);
         inventory = warehouseStockOutlet;
+        break;
+      case "retail_core":
+        // 직영 주수: stockWeek 값 그대로 사용 (계산 불필요)
+        weeks = stockWeek;
+        // 직영 재고: 이미 계산된 retailStockCore 사용 (재고표와 동일)
+        inventory = retailStockCore;
         break;
     }
 
