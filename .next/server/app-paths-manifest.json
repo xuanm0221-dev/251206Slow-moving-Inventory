@@ -1,4 +1,5 @@
 {
-  "/discovery-sales/page": "app/discovery-sales/page.js",
-  "/mlb-sales/page": "app/mlb-sales/page.js"
+  "/page": "app/page.js",
+  "/mlb-sales/page": "app/mlb-sales/page.js",
+  "/api/forecast-inventory/route": "app/api/forecast-inventory/route.js"
 }

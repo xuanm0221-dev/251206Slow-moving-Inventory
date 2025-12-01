@@ -1,4 +1,4 @@
-// File: C:\4.weekcover\acc\src\app\layout.tsx
+// File: C:\3.accweekcover\251126accweekcover\src\app\layout.tsx
 import * as entry from '../../../src/app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
