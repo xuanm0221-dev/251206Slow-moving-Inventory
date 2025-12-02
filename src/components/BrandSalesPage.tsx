@@ -33,6 +33,7 @@ import InventoryStockSummaryTable from "./InventoryStockSummaryTable";
 import ActualArrivalTable from "./ActualArrivalTable";
 import { generateForecastForBrand } from "@/lib/forecast";
 import { buildInventoryForecastForTab } from "@/lib/inventoryForecast";
+import { computeStockWeeksForChart, StockWeeksChartPoint, ProductTypeTab } from "@/utils/stockWeeks";
 
 interface BrandSalesPageProps {
   brand: Brand;
@@ -219,6 +220,28 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
     });
   }, [salesData?.months, salesBrandData]);
 
+  // 차트용 재고주수 데이터 계산 (히트맵과 동일한 계산 로직 사용)
+  const MONTHS_2025_WITH_FORECAST = [
+    "2025.01", "2025.02", "2025.03", "2025.04", "2025.05", "2025.06",
+    "2025.07", "2025.08", "2025.09", "2025.10", "2025.11", "2025.12",
+    "2026.01", "2026.02", "2026.03", "2026.04",
+  ];
+
+  const stockWeeksChartData = useMemo(() => {
+    if (!salesTabData || !inventoryTabDataWithForecast || !inventoryData?.daysInMonth) {
+      return null;
+    }
+    // 단일 아이템 차트는 항상 "전체" 상품 타입 사용 (channelTab과는 별개)
+    return computeStockWeeksForChart(
+      MONTHS_2025_WITH_FORECAST,
+      inventoryTabDataWithForecast,
+      salesTabData,
+      inventoryData.daysInMonth,
+      stockWeekWindow,
+      "전체"
+    );
+  }, [salesTabData, inventoryTabDataWithForecast, inventoryData?.daysInMonth, stockWeekWindow]);
+
   return (
     <>
       <Navigation />
@@ -280,20 +303,17 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
             </div>
 
             {/* 1.5. 월별 재고주수 추이 차트 */}
-            {salesTabData && inventoryTabDataWithForecast && inventoryData?.daysInMonth && (
+            {stockWeeksChartData && (
               <StockWeeksChart
-                key={`${selectedTab}-${growthRate}`}  // growthRate 변경 시 강제 재렌더링 (툴팁 업데이트)
+                key={`${selectedTab}-${growthRate}-${stockWeekWindow}`}
                 selectedTab={selectedTab}
-                // 25.11~26.04 forecast 재고주수까지 포함
-                inventoryData={inventoryTabDataWithForecast}
-                salesData={salesTabData}
-                daysInMonth={inventoryData.daysInMonth}
-                stockWeek={stockWeeks[selectedTab]}
+                chartData={stockWeeksChartData}
                 showAllItems={showAllItemsInChart}
                 allInventoryData={inventoryBrandData}
                 allSalesData={salesBrandData}
-                channelTab={channelTab}
+                daysInMonth={inventoryData?.daysInMonth || {}}
                 stockWeekWindow={stockWeekWindow}
+                channelTab={channelTab}
               />
             )}
 

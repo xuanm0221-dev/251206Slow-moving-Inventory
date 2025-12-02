@@ -15,29 +15,23 @@ import {
   ItemTab, 
   ITEM_TABS,
   ChannelTab,
-  InventoryItemTabData, 
-  SalesItemTabData,
   InventoryBrandData,
   SalesBrandData,
-  InventoryMonthData,
-  SalesMonthData,
   StockWeekWindow,
 } from "@/types/sales";
+import { StockWeeksChartPoint, computeStockWeeksForChart, ProductTypeTab, getWindowMonths, getDaysInMonthFromYm, calculateWeeks } from "@/utils/stockWeeks";
 
 interface StockWeeksChartProps {
   selectedTab: ItemTab;
-  inventoryData: InventoryItemTabData;
-  salesData: SalesItemTabData;
-  daysInMonth: { [month: string]: number };
-  stockWeek: number;
+  // 히트맵에서 계산된 주수 데이터 (단일 아이템용)
+  chartData: StockWeeksChartPoint[];
   // 모두선택 모드용
   showAllItems: boolean;
   allInventoryData?: InventoryBrandData;
   allSalesData?: SalesBrandData;
-  // 채널 탭
-  channelTab: ChannelTab;
-  // 재고주수 계산 기간 (1/2/3개월)
+  daysInMonth: { [month: string]: number };
   stockWeekWindow: StockWeekWindow;
+  channelTab: ChannelTab;
 }
 
 // 아이템별 색상 정의 (주력: 진한색, 아울렛: 연한색)
@@ -73,41 +67,6 @@ const MONTHS_2025_WITH_FORECAST = [
   "2026.04",
 ];
 
-// daysInMonth에 값이 없는 월(26.01~26.04 등)은 캘린더 기준으로 일수 계산
-function getDaysInMonthFromYm(month: string): number {
-  const [yearStr, monthStr] = month.split(".");
-  const year = Number(yearStr);
-  const m = Number(monthStr);
-  if (!year || !m) return 30; // 안전한 기본값
-  // JS Date: month는 1월=1 기준에서 마지막 날 구하기 위해 (year, m, 0)
-  return new Date(year, m, 0).getDate();
-}
-
-// "YYYY.MM"에서 이전 달 구하기 (예: 2025.03 -> 2025.02)
-function getPrevMonth(month: string): string {
-  const [yearStr, monthStr] = month.split(".");
-  let year = Number(yearStr);
-  let m = Number(monthStr);
-  if (m === 1) {
-    year -= 1;
-    m = 12;
-  } else {
-    m -= 1;
-  }
-  return `${year}.${String(m).padStart(2, "0")}`;
-}
-
-// 기준 월과 윈도우(1/2/3개월)에 따라 포함될 월 리스트 계산 (당월 포함, 과거로만 확장)
-function getWindowMonths(baseMonth: string, window: StockWeekWindow): string[] {
-  const months: string[] = [baseMonth];
-  let cur = baseMonth;
-  for (let i = 1; i < window; i++) {
-    cur = getPrevMonth(cur);
-    months.push(cur);
-  }
-  return months;
-}
-
 // 채널 라벨
 const CHANNEL_LABELS: Record<ChannelTab, string> = {
   ALL: "전체",
@@ -115,209 +74,52 @@ const CHANNEL_LABELS: Record<ChannelTab, string> = {
   창고: "창고",
 };
 
-// 상품 타입 탭 타입
-type ProductTypeTab = "전체" | "주력" | "아울렛";
-
 export default function StockWeeksChart({
   selectedTab,
-  inventoryData,
-  salesData,
-  daysInMonth,
-  stockWeek,
+  chartData,
   showAllItems,
   allInventoryData,
   allSalesData,
-  channelTab,
+  daysInMonth,
   stockWeekWindow,
+  channelTab,
 }: StockWeeksChartProps) {
   // 상품 타입 탭 상태
   const [productTypeTab, setProductTypeTab] = useState<ProductTypeTab>("전체");
 
-  // 주수 계산 함수
-  const calculateWeeks = (inventory: number, sales: number, days: number): number | null => {
-    if (sales === 0 || days === 0) return null;
-    const dailySales = sales / days;
-    const weeklySales = dailySales * 7;
-    if (weeklySales === 0) return null;
-    return inventory / weeklySales;
-  };
-
-  // 채널별 재고/판매 데이터 가져오기 (히트맵과 동일한 계산 로직)
-  const getChannelData = (
-    invData: InventoryMonthData | undefined, 
-    slsData: SalesMonthData | undefined,
-    days: number
-  ) => {
-    if (!invData || !slsData) return { stockCore: 0, stockOutlet: 0, salesCore: 0, salesOutlet: 0 };
-
-    // 직영재고 계산 함수 (히트맵과 동일)
-    const calculateRetailStock = (orSales: number) => {
-      if (days === 0) return 0;
-      // 모든 데이터는 원 단위로 저장되어 있음
-      return (orSales / days) * 7 * stockWeek;
-    };
-
-    switch (channelTab) {
-      case "FRS":
-        // 대리상: frs_core, frs_outlet 주수 (히트맵과 동일)
-        return {
-          stockCore: invData.FRS_core || 0,
-          stockOutlet: invData.FRS_outlet || 0,
-          salesCore: slsData.FRS_core || 0,
-          salesOutlet: slsData.FRS_outlet || 0,
-        };
-      case "창고":
-        // 창고: warehouse_core, warehouse_outlet 주수 (히트맵과 동일)
-        const retailStockCore = calculateRetailStock(invData.OR_sales_core || 0);
-        const retailStockOutlet = calculateRetailStock(invData.OR_sales_outlet || 0);
-        const warehouseStockCore = (invData.HQ_OR_core || 0) - retailStockCore;
-        // 아울렛은 본사재고(HQ_OR_outlet)를 직접 사용 (본사물류재고 아님)
-        return {
-          stockCore: Math.max(0, warehouseStockCore),
-          stockOutlet: invData.HQ_OR_outlet || 0,  // 본사재고 직접 사용
-          // 창고 주력: 전체 판매로 계산 (유지)
-          salesCore: slsData.전체_core || 0,
-          // 창고 아울렛: 직영판매(OR_sales)만 사용 (대리상판매 제외)
-          // 모든 데이터는 원 단위로 저장되어 있음
-          salesOutlet: invData.OR_sales_outlet || 0,
-        };
-      case "ALL":
-      default:
-        // 전체: total_core, total_outlet 주수 (히트맵과 동일)
-        return {
-          stockCore: invData.전체_core || 0,
-          stockOutlet: invData.전체_outlet || 0,
-          salesCore: slsData.전체_core || 0,
-          salesOutlet: slsData.전체_outlet || 0,
-        };
-    }
-  };
-
-  // 단일 아이템 차트 데이터 생성 (상품 타입 탭에 따라 계산)
+  // 단일 아이템 차트 데이터: props로 받은 데이터 그대로 사용
   const singleItemChartData = useMemo(() => {
-    return MONTHS_2025_WITH_FORECAST.map((month) => {
-      const invData = inventoryData[month];
-      const slsData = salesData[month];
-      const windowMonths = getWindowMonths(month, stockWeekWindow);
-      let daysWindow = 0;
-      let totalSalesWindow = 0;        // 전체주수용 전체 매출 (전체 필드 + 없는 경우 core+outlet)
-      let totalSalesCoreWindow = 0;
-      let totalSalesOutletWindow = 0;
-      let frsSalesCoreWindow = 0;
-      let frsSalesOutletWindow = 0;
+    return chartData;
+  }, [chartData]);
 
-      windowMonths.forEach((m) => {
-        const sd = salesData[m];
-        const d = daysInMonth[m] || getDaysInMonthFromYm(m);
-        daysWindow += d;
-        if (sd) {
-          // 전체주수용: forecast 월의 전체 필드까지 포함
-          const monthTotal =
-            sd.전체 !== undefined
-              ? sd.전체
-              : (sd.전체_core || 0) + (sd.전체_outlet || 0);
-
-          totalSalesWindow += monthTotal;
-          totalSalesCoreWindow += sd.전체_core || 0;
-          totalSalesOutletWindow += sd.전체_outlet || 0;
-          frsSalesCoreWindow += sd.FRS_core || 0;
-          frsSalesOutletWindow += sd.FRS_outlet || 0;
-        }
-      });
-
-      const days = daysWindow || (daysInMonth[month] || getDaysInMonthFromYm(month));
-
-      // 월 레이블 생성: 25.01 형식, 예상 월은 (F) 추가
-      const [yearStr, monthStr] = month.split(".");
-      const yearShort = yearStr.slice(-2); // "2025" -> "25"
-      const isForecast = slsData?.isForecast || false;
-      const monthLabel = isForecast 
-        ? `${yearShort}.${monthStr}(F)`
-        : `${yearShort}.${monthStr}`;
-
-      if (!invData || !slsData || !days) {
-        return {
-          month: monthLabel,
-          합계: null,
-          대리상: null,
-        };
-      }
-
-      let totalStock: number;
-      let totalSales: number;
-      let frsStock: number;
-      let frsSales: number;
-
-      // 상품 타입 탭에 따라 계산
-      switch (productTypeTab) {
-        case "주력":
-          // 주력상품: core만 사용
-          totalStock = invData.전체_core || 0;
-          totalSales = totalSalesCoreWindow;
-          frsStock = invData.FRS_core || 0;
-          frsSales = frsSalesCoreWindow;
-          break;
-        case "아울렛":
-          // 아울렛상품: outlet만 사용
-          totalStock = invData.전체_outlet || 0;
-          totalSales = totalSalesOutletWindow;
-          frsStock = invData.FRS_outlet || 0;
-          frsSales = frsSalesOutletWindow;
-          break;
-        case "전체":
-        default:
-          // 상품전체: StockWeeksTable의 "전체주수" 계산 로직과 동일하게 사용
-          // 예상 구간에서는 전체 필드 사용, 실적 구간에서는 core + outlet
-          const totalStockFromField = invData.전체 !== undefined ? invData.전체 : null;
-          const totalStockCore = invData.전체_core || 0;
-          const totalStockOutlet = invData.전체_outlet || 0;
-          
-          // StockWeeksTable의 "전체주수" 계산과 동일:
-          // 재고는 해당 월, 매출은 window(1/2/3개월) 합계
-          totalStock = totalStockFromField !== null 
-            ? totalStockFromField 
-            : totalStockCore + totalStockOutlet;
-          totalSales = totalSalesWindow;
-          
-          frsStock = (invData.FRS_core || 0) + (invData.FRS_outlet || 0);
-          // 히트맵과 동일: 대리상 매출도 윈도우 합계 사용
-          frsSales = frsSalesCoreWindow + frsSalesOutletWindow;
-          break;
-      }
-
-      // 실선: 합계 기준
-      const weeksTotal = calculateWeeks(totalStock, totalSales, days);
-
-      // 점선: 대리상 기준
-      // 히트맵과 동일: 예상 구간에서는 대리상주수 계산하지 않음
-      const weeksFRS = isForecast 
-        ? null 
-        : (() => {
-            const result = calculateWeeks(frsStock, frsSales, days);
-            return result !== null ? parseFloat(result.toFixed(1)) : null;
-          })();
-
-      return {
-        month: monthLabel,
-        합계: weeksTotal !== null ? parseFloat(weeksTotal.toFixed(1)) : null,
-        대리상: weeksFRS,
-      };
-    });
-  }, [inventoryData, salesData, daysInMonth, productTypeTab, stockWeekWindow]);
-
-  // 모든 아이템 차트 데이터 생성 (상품 타입 탭에 따라 계산)
+  // 모든 아이템 차트 데이터 생성 (각 아이템별로 computeStockWeeksForChart 사용)
   const allItemsChartData = useMemo(() => {
     if (!showAllItems || !allInventoryData || !allSalesData) return [];
 
-    return MONTHS_2025_WITH_FORECAST.map((month) => {
-      const windowMonths = getWindowMonths(month, stockWeekWindow);
-      let daysWindow = 0;
-      // 아이템별 합계를 위해 윈도우 합계를 아이템 루프 안에서 계산
+    // 각 아이템별로 주수 데이터 계산
+    const itemChartDataMap: Record<ItemTab, StockWeeksChartPoint[]> = {} as Record<ItemTab, StockWeeksChartPoint[]>;
+    
+    ITEM_TABS.forEach((itemTab) => {
+      const itemInventoryData = allInventoryData[itemTab];
+      const itemSalesData = allSalesData[itemTab];
       
+      if (itemInventoryData && itemSalesData) {
+        itemChartDataMap[itemTab] = computeStockWeeksForChart(
+          MONTHS_2025_WITH_FORECAST,
+          itemInventoryData,
+          itemSalesData,
+          daysInMonth,
+          stockWeekWindow,
+          productTypeTab
+        );
+      }
+    });
+
+    // 월별로 데이터 포인트 생성
+    return MONTHS_2025_WITH_FORECAST.map((month, index) => {
       // 월 레이블 생성: 25.01 형식, 예상 월은 (F) 추가
       const [yearStr, monthStr] = month.split(".");
-      const yearShort = yearStr.slice(-2); // "2025" -> "25"
-      // 모든 아이템 모드에서는 첫 번째 아이템의 isForecast를 확인
+      const yearShort = yearStr.slice(-2);
       const firstItemData = allSalesData[ITEM_TABS[0]]?.[month];
       const isForecast = firstItemData?.isForecast || false;
       const monthLabel = isForecast 
@@ -329,102 +131,14 @@ export default function StockWeeksChart({
       };
 
       ITEM_TABS.forEach((itemTab) => {
-        const invData = allInventoryData[itemTab]?.[month];
-        const slsData = allSalesData[itemTab]?.[month];
-
-        if (!invData || !slsData) {
+        const chartData = itemChartDataMap[itemTab];
+        if (chartData && chartData[index]) {
+          dataPoint[`${ITEM_LABELS[itemTab]}_합계`] = chartData[index].합계;
+          dataPoint[`${ITEM_LABELS[itemTab]}_대리상`] = chartData[index].대리상;
+        } else {
           dataPoint[`${ITEM_LABELS[itemTab]}_합계`] = null;
           dataPoint[`${ITEM_LABELS[itemTab]}_대리상`] = null;
-          return;
         }
-
-        let totalStock: number;
-        let frsStock: number;
-
-        // 상품 타입 탭에 따라 계산
-        switch (productTypeTab) {
-          case "주력":
-            // 주력상품: core만 사용
-            totalStock = invData.전체_core || 0;
-            frsStock = invData.FRS_core || 0;
-            break;
-          case "아울렛":
-            // 아울렛상품: outlet만 사용
-            totalStock = invData.전체_outlet || 0;
-            frsStock = invData.FRS_outlet || 0;
-            break;
-          case "전체":
-          default:
-            // 상품전체: StockWeeksTable의 "전체주수" 계산 로직과 동일하게 사용
-            // 예상 구간에서는 전체 필드 사용, 실적 구간에서는 core + outlet
-            const totalStockFromField = invData.전체 !== undefined ? invData.전체 : null;
-            const totalStockCore = invData.전체_core || 0;
-            const totalStockOutlet = invData.전체_outlet || 0;
-            
-            // StockWeeksTable의 "전체주수" 계산과 동일
-            totalStock = totalStockFromField !== null 
-              ? totalStockFromField 
-              : totalStockCore + totalStockOutlet;
-            
-            frsStock = (invData.FRS_core || 0) + (invData.FRS_outlet || 0);
-            break;
-        }
-
-        // 실선: 합계 기준
-        const windowMonthsForItem = getWindowMonths(month, stockWeekWindow);
-        let daysWindowItem = 0;
-        let totalSalesCoreWindowItem = 0;
-        let totalSalesOutletWindowItem = 0;
-        let frsSalesCoreWindowItem = 0;
-        let frsSalesOutletWindowItem = 0;
-
-        windowMonthsForItem.forEach((m) => {
-          const sd = allSalesData[itemTab]?.[m];
-          const d = daysInMonth[m] || getDaysInMonthFromYm(m);
-          daysWindowItem += d;
-          if (sd) {
-            totalSalesCoreWindowItem += sd.전체_core || 0;
-            totalSalesOutletWindowItem += sd.전체_outlet || 0;
-            frsSalesCoreWindowItem += sd.FRS_core || 0;
-            frsSalesOutletWindowItem += sd.FRS_outlet || 0;
-          }
-        });
-
-        const days =
-          daysWindowItem || (daysInMonth[month] || getDaysInMonthFromYm(month));
-
-        let totalSalesWindow: number;
-        let frsSalesWindow: number;
-
-        switch (productTypeTab) {
-          case "주력":
-            totalSalesWindow = totalSalesCoreWindowItem;
-            frsSalesWindow = frsSalesCoreWindowItem;
-            break;
-          case "아울렛":
-            totalSalesWindow = totalSalesOutletWindowItem;
-            frsSalesWindow = frsSalesOutletWindowItem;
-            break;
-          case "전체":
-          default:
-            totalSalesWindow = totalSalesCoreWindowItem + totalSalesOutletWindowItem;
-            frsSalesWindow = frsSalesCoreWindowItem + frsSalesOutletWindowItem;
-            break;
-        }
-
-        const weeksTotal = calculateWeeks(totalStock, totalSalesWindow, days);
-        dataPoint[`${ITEM_LABELS[itemTab]}_합계`] = weeksTotal !== null ? parseFloat(weeksTotal.toFixed(1)) : null;
-
-        // 점선: 대리상 기준
-        // 히트맵과 동일: 예상 구간에서는 대리상주수 계산하지 않음
-        const isForecastItem = slsData.isForecast || false;
-        const weeksFRS = isForecastItem
-          ? null
-          : (() => {
-              const result = calculateWeeks(frsStock, frsSalesWindow, days);
-              return result !== null ? parseFloat(result.toFixed(1)) : null;
-            })();
-        dataPoint[`${ITEM_LABELS[itemTab]}_대리상`] = weeksFRS;
       });
 
       return dataPoint;

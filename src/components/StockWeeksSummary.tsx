@@ -13,6 +13,7 @@ import {
   StockWeekWindow,
 } from "@/types/sales";
 import { cn } from "@/lib/utils";
+import { computeStockWeeksForRowType, getWindowMonths } from "@/utils/stockWeeks";
 
 interface StockWeeksSummaryProps {
   brand: Brand;
@@ -59,30 +60,6 @@ const MONTHS_2025 = Array.from({ length: 12 }, (_, i) => ({
   label: `${i + 1}월`,
 }));
 
-// "YYYY.MM"에서 이전 달 구하기 (예: 2025.03 -> 2025.02)
-function getPrevMonth(month: string): string {
-  const [yearStr, monthStr] = month.split(".");
-  let year = Number(yearStr);
-  let m = Number(monthStr);
-  if (m === 1) {
-    year -= 1;
-    m = 12;
-  } else {
-    m -= 1;
-  }
-  return `${year}.${String(m).padStart(2, "0")}`;
-}
-
-// 기준 월과 윈도우(1/2/3개월)에 따라 포함될 월 리스트 계산 (당월 포함, 과거로만 확장)
-function getWindowMonths(baseMonth: string, window: StockWeekWindow): string[] {
-  const months: string[] = [baseMonth];
-  let cur = baseMonth;
-  for (let i = 1; i < window; i++) {
-    cur = getPrevMonth(cur);
-    months.push(cur);
-  }
-  return months;
-}
 
 export default function StockWeeksSummary({
   brand,
@@ -107,16 +84,7 @@ export default function StockWeeksSummary({
 
   const [selectedMonth, setSelectedMonth] = useState<string>(getLatestMonth());
 
-  // 주수 계산 함수
-  const calculateWeeks = (inventory: number, sales: number, days: number): number => {
-    if (sales === 0 || days === 0) return 0;
-    const dailySales = sales / days;
-    const weeklySales = dailySales * 7;
-    if (weeklySales === 0) return 0;
-    return inventory / weeklySales;
-  };
-
-  // 직영재고 계산 함수
+  // 직영재고 계산 함수 (retail_core 행 타입용)
   const calculateRetailStock = (orSales: number, days: number, itemTab: ItemTab): number => {
     if (days === 0) return 0;
     return (orSales / days) * 7 * stockWeeks[itemTab];
@@ -135,119 +103,38 @@ export default function StockWeeksSummary({
       return { weeks: 0, inventory: 0 };
     }
 
-    // 예상 구간에서는 전체 필드가 있으면 그것을 사용
-    const totalStockFromField = invData.전체 !== undefined ? invData.전체 : null;
-    const totalStockCore = invData.전체_core || 0;
-    const totalStockOutlet = invData.전체_outlet || 0;
-    const frsStockCore = invData.FRS_core || 0;
-    const frsStockOutlet = invData.FRS_outlet || 0;
-    const hqOrStockCore = invData.HQ_OR_core || 0;
-    const hqOrStockOutlet = invData.HQ_OR_outlet || 0;
-
-    const orSalesCore = invData.OR_sales_core || 0;
-    const orSalesOutlet = invData.OR_sales_outlet || 0;
-
-    // 윈도우(1/2/3개월)에 따른 매출/일수 집계
-    const windowMonths = getWindowMonths(month, stockWeekWindow);
-    let totalSalesCoreWindow = 0;
-    let totalSalesOutletWindow = 0;
-    let frsSalesCoreWindow = 0;
-    let frsSalesOutletWindow = 0;
-    let warehouseSalesWindow = 0;
-    let orSalesOutletWindow = 0;
-    let daysWindow = 0;
-
-    windowMonths.forEach((m) => {
-      const sd = salesBrandData[itemTab]?.[m];
-      const id = inventoryBrandData[itemTab]?.[m];
-      const d = daysInMonth[m] || 30;
-      daysWindow += d;
-      if (sd) {
-        totalSalesCoreWindow += sd.전체_core || 0;
-        totalSalesOutletWindow += sd.전체_outlet || 0;
-        frsSalesCoreWindow += sd.FRS_core || 0;
-        frsSalesOutletWindow += sd.FRS_outlet || 0;
-        warehouseSalesWindow +=
-          (sd.FRS_core || 0) + (sd.OR_core || 0) + (sd.OR_outlet || 0);
-      }
-      if (id) {
-        orSalesOutletWindow += id.OR_sales_outlet || 0;
-      }
-    });
-
-    const days = daysWindow || (daysInMonth[month] || 30);
-
-    // 모든 데이터는 원 단위로 저장되어 있음
-    const retailStockCore = calculateRetailStock(orSalesCore, days, itemTab);
-    const retailStockOutlet = calculateRetailStock(orSalesOutlet, days, itemTab);
-
-    const warehouseStockCore = hqOrStockCore - retailStockCore;
-    const warehouseStockOutlet = hqOrStockOutlet - retailStockOutlet;
-
-    const totalSalesCore = totalSalesCoreWindow;
-    const totalSalesOutlet = totalSalesOutletWindow;
-    const frsSalesCore = frsSalesCoreWindow;
-    const frsSalesOutlet = frsSalesOutletWindow;
-
-    let weeks = 0;
-    let inventory = 0;
-
-    switch (rowType) {
-      case "total":
-        // 예상 구간에서는 전체 필드 사용, 실적 구간에서는 core + outlet
-        const totalStock = totalStockFromField !== null 
-          ? totalStockFromField 
-          : totalStockCore + totalStockOutlet;
-        const totalSales = totalSalesCore + totalSalesOutlet;
-        weeks = calculateWeeks(totalStock, totalSales, days);
-        inventory = totalStock;
-        break;
-      case "total_core":
-        weeks = calculateWeeks(totalStockCore, totalSalesCore, days);
-        inventory = totalStockCore;
-        break;
-      case "total_outlet":
-        weeks = calculateWeeks(totalStockOutlet, totalSalesOutlet, days);
-        inventory = totalStockOutlet;
-        break;
-      case "frs":
-        weeks = calculateWeeks(frsStockCore + frsStockOutlet, frsSalesCore + frsSalesOutlet, days);
-        inventory = frsStockCore + frsStockOutlet;
-        break;
-      case "frs_core":
-        weeks = calculateWeeks(frsStockCore, frsSalesCore, days);
-        inventory = frsStockCore;
-        break;
-      case "frs_outlet":
-        weeks = calculateWeeks(frsStockOutlet, frsSalesOutlet, days);
-        inventory = frsStockOutlet;
-        break;
-      case "warehouse":
-        // 창고재고주수(전체) = 창고재고(전체) ÷ [(주력상품 대리상판매 + 주력상품 직영판매 + 아울렛상품 직영판매) ÷ 일수 × 7]
-        const warehouseSales = warehouseSalesWindow;
-        weeks = calculateWeeks(warehouseStockCore + warehouseStockOutlet, warehouseSales, days);
-        inventory = warehouseStockCore + warehouseStockOutlet;
-        break;
-      case "warehouse_core":
-        weeks = calculateWeeks(warehouseStockCore, totalSalesCore, days);
-        inventory = warehouseStockCore;
-        break;
-      case "warehouse_outlet":
-        // 본사물류재고 아울렛: 본사재고(HQ_OR_outlet)를 직접 사용 (본사물류재고 아님)
-        // 직영판매(OR_sales)만 사용 (대리상판매 제외)
-        // 모든 데이터는 원 단위로 저장되어 있음
-        weeks = calculateWeeks(hqOrStockOutlet, orSalesOutletWindow, days);
-        inventory = hqOrStockOutlet;
-        break;
-      case "retail_core":
-        // 직영 주수: stockWeeks[itemTab] 값 그대로 사용 (계산 불필요)
-        weeks = stockWeeks[itemTab];
-        // 직영 재고: 이미 계산된 retailStockCore 사용 (재고표와 동일)
-        inventory = retailStockCore;
-        break;
+    // retail_core는 공통 함수를 사용하지 않고 별도 처리
+    if (rowType === "retail_core") {
+      const days = daysInMonth[month] || 30;
+      const orSalesCore = invData.OR_sales_core || 0;
+      const retailStockCore = calculateRetailStock(orSalesCore, days, itemTab);
+      return {
+        weeks: stockWeeks[itemTab], // 직영 주수는 stockWeeks 값 그대로 사용
+        inventory: retailStockCore,
+      };
     }
 
-    return { weeks, inventory };
+    // 공통 함수로 계산 (히트맵과 동일한 로직)
+    const result = computeStockWeeksForRowType(
+      month,
+      rowType,
+      invData,
+      slsData,
+      inventoryBrandData[itemTab],
+      salesBrandData[itemTab],
+      daysInMonth,
+      stockWeekWindow,
+      stockWeeks[itemTab] // 직영재고 계산용
+    );
+
+    if (result === null) {
+      return { weeks: 0, inventory: 0 };
+    }
+
+    return {
+      weeks: result.weeks ?? 0,
+      inventory: result.inventory,
+    };
   };
 
   // YOY 증감 포맷팅
