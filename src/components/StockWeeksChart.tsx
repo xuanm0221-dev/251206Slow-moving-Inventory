@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -32,6 +32,8 @@ interface StockWeeksChartProps {
   daysInMonth: { [month: string]: number };
   stockWeekWindow: StockWeekWindow;
   channelTab: ChannelTab;
+  productTypeTab: ProductTypeTab;
+  setProductTypeTab: (tab: ProductTypeTab) => void;
 }
 
 // 아이템별 색상 정의 (주력: 진한색, 아울렛: 연한색)
@@ -83,9 +85,9 @@ export default function StockWeeksChart({
   daysInMonth,
   stockWeekWindow,
   channelTab,
+  productTypeTab,
+  setProductTypeTab,
 }: StockWeeksChartProps) {
-  // 상품 타입 탭 상태
-  const [productTypeTab, setProductTypeTab] = useState<ProductTypeTab>("전체");
 
   // 단일 아이템 차트 데이터: props로 받은 데이터 그대로 사용
   const singleItemChartData = useMemo(() => {

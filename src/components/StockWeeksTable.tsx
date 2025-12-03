@@ -2,7 +2,7 @@
 
 import { InventoryItemTabData, SalesItemTabData, StockWeekWindow } from "@/types/sales";
 import { cn } from "@/lib/utils";
-import { getWindowMonths, getDaysInMonthFromYm, computeStockWeeksForRowType } from "@/utils/stockWeeks";
+import { getWindowMonths, getDaysInMonthFromYm, computeStockWeeksForRowType, ProductTypeTab } from "@/utils/stockWeeks";
 
 interface StockWeeksTableProps {
   inventoryData: InventoryItemTabData;
@@ -11,6 +11,7 @@ interface StockWeeksTableProps {
   stockWeek: number;
   year: "2024" | "2025";
   stockWeekWindow: StockWeekWindow;
+  productTypeTab: ProductTypeTab;
 }
 
 const MONTHS_2024 = [
@@ -67,8 +68,24 @@ export default function StockWeeksTable({
   stockWeek,
   year,
   stockWeekWindow,
+  productTypeTab,
 }: StockWeeksTableProps) {
   const months = year === "2024" ? MONTHS_2024 : MONTHS_2025_WITH_FORECAST;
+  
+  // 선택된 행인지 확인하는 함수
+  const isRowSelected = (rowType: string): boolean => {
+    if (productTypeTab === "전체") {
+      // 전체 선택 시: "전체주수"와 "대리상주수" 헤더 행 표시
+      return rowType === "total" || rowType === "frs";
+    } else if (productTypeTab === "주력") {
+      // 주력상품 선택 시: "전체주수 아래의 주력상품", "대리상주수 아래의 주력상품"
+      return rowType === "total_core" || rowType === "frs_core";
+    } else if (productTypeTab === "아울렛") {
+      // 아울렛상품 선택 시: "전체주수 아래의 아울렛상품", "대리상주수 아래의 아울렛상품"
+      return rowType === "total_outlet" || rowType === "frs_outlet";
+    }
+    return false;
+  };
   
   // 주수 포맷팅 함수 (히트맵 표시용)
   const formatWeeks = (weeks: number | null): { display: string; value: number } => {
@@ -137,47 +154,66 @@ export default function StockWeeksTable({
             </tr>
           </thead>
           <tbody>
-            {STOCK_WEEKS_ROWS.map((row, idx) => (
-              <tr key={idx}>
-                <td
+            {STOCK_WEEKS_ROWS.map((row, idx) => {
+              const isSelected = isRowSelected(row.type);
+              
+              return (
+                <tr 
+                  key={idx}
                   className={cn(
-                    "text-left sticky left-0 z-10",
-                    row.isHeader && "font-semibold text-gray-800",
-                    !row.isHeader && "bg-white",
-                    row.indent && "row-indent"
+                    isSelected && "ring-2 ring-blue-500 ring-offset-1"
                   )}
-                  style={row.isHeader ? { backgroundColor: '#f3f4f6' } : undefined}
                 >
-                  {row.label}
-                </td>
-                {months.map((month) => {
-                  const cellData = getCellData(month, row.type);
-                  const isNoData = cellData.display === "-";
-                  const isZeroSales = cellData.display === "판매0";
-                  const hasHeatmap = row.hasHeatmap && cellData.value >= 0;
-                  
-                  // 헤더 행은 연한 회색 배경, 히트맵이 있는 셀은 히트맵 색상
-                  const cellStyle = row.isHeader 
-                    ? { backgroundColor: '#f3f4f6' } 
-                    : (hasHeatmap ? getHeatmapStyle(cellData.value) : undefined);
-                  
-                  return (
-                    <td
-                      key={month}
-                      className={cn(
-                        "text-center",
-                        row.isHeader && "font-semibold text-gray-800",
-                        isNoData && "text-gray-400",
-                        isZeroSales && "text-amber-600 text-xs"
-                      )}
-                      style={cellStyle}
-                    >
-                      {cellData.display}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                  <td
+                    className={cn(
+                      "text-left sticky left-0 z-10",
+                      row.isHeader && "font-semibold text-gray-800",
+                      !row.isHeader && "bg-white",
+                      row.indent && "row-indent",
+                      isSelected && "bg-blue-50"
+                    )}
+                    style={row.isHeader && !isSelected ? { backgroundColor: '#f3f4f6' } : undefined}
+                  >
+                    {row.label}
+                  </td>
+                  {months.map((month) => {
+                    const cellData = getCellData(month, row.type);
+                    const isNoData = cellData.display === "-";
+                    const isZeroSales = cellData.display === "판매0";
+                    const hasHeatmap = row.hasHeatmap && cellData.value >= 0;
+                    
+                    // 헤더 행은 연한 회색 배경, 히트맵이 있는 셀은 히트맵 색상
+                    // 선택된 행이면 배경색 조정
+                    let cellStyle: React.CSSProperties | undefined;
+                    if (row.isHeader) {
+                      cellStyle = isSelected ? { backgroundColor: '#dbeafe' } : { backgroundColor: '#f3f4f6' };
+                    } else if (hasHeatmap) {
+                      const heatmapStyle = getHeatmapStyle(cellData.value);
+                      cellStyle = isSelected 
+                        ? { ...heatmapStyle, border: '2px solid #3b82f6' }
+                        : heatmapStyle;
+                    } else if (isSelected) {
+                      cellStyle = { backgroundColor: '#dbeafe' };
+                    }
+                    
+                    return (
+                      <td
+                        key={month}
+                        className={cn(
+                          "text-center",
+                          row.isHeader && "font-semibold text-gray-800",
+                          isNoData && "text-gray-400",
+                          isZeroSales && "text-amber-600 text-xs"
+                        )}
+                        style={cellStyle}
+                      >
+                        {cellData.display}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
