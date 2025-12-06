@@ -32,6 +32,7 @@ import ForecastInventoryTable from "./ForecastInventoryTable";
 import InventoryStockSummaryTable from "./InventoryStockSummaryTable";
 import ActualArrivalTable from "./ActualArrivalTable";
 import StagnantStockAnalysis from "./StagnantStockAnalysis";
+import InventorySeasonChart from "./InventorySeasonChart";
 import { generateForecastForBrand } from "@/lib/forecast";
 import { buildInventoryForecastForTab } from "@/lib/inventoryForecast";
 import { computeStockWeeksForChart, StockWeeksChartPoint, ProductTypeTab } from "@/utils/stockWeeks";
@@ -371,6 +372,9 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                 </div>
               </div>
             )}
+
+            {/* 1.75. 재고택금액 추이 (시즌별) - 전년대비/매출액대비 전환 차트 */}
+            <InventorySeasonChart brand={brand} />
 
             {/* 1.8. 정체재고 분석 */}
             <StagnantStockAnalysis brand={brand} />

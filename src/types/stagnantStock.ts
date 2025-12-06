@@ -17,6 +17,12 @@ export type SeasonGroup = "정체재고" | "당시즌" | "차기시즌" | "과�
 // 중분류
 export type MidCategory = "전체" | "신발" | "모자" | "가방" | "기타";
 
+// 채널 타입 (정체재고 분석용)
+export type StagnantChannelTab = "전체" | "FR" | "OR";
+
+// 채널 탭 목록
+export const STAGNANT_CHANNEL_TABS: StagnantChannelTab[] = ["전체", "FR", "OR"];
+
 // 개별 품번 데이터
 export interface StagnantStockItem {
   dimensionKey: string;      // 분석 기준 KEY (탭에 따라 다름)
@@ -26,12 +32,21 @@ export interface StagnantStockItem {
   size_cd?: string;          // 사이즈코드
   mid_category_kr: MidCategory; // 중분류
   season: string;            // 시즌
-  stock_qty: number;         // 재고수량
-  stock_amt: number;         // 재고금액
-  sales_tag_amt: number;     // TAG 매출금액
-  ratio: number;             // 비율 (매출/중분류재고)
-  status: StockStatus;       // 상태 (정체/정상)
+  // 전체 기준 데이터 (정체/정상 판단에 사용)
+  stock_qty: number;         // 재고수량 (전체)
+  stock_amt: number;         // 재고금액 (전체)
+  sales_tag_amt: number;     // TAG 매출금액 (전체)
+  ratio: number;             // 비율 (매출/중분류재고) - 전체 기준
+  status: StockStatus;       // 상태 (정체/정상) - 전체 기준으로만 판단
   seasonGroup: SeasonGroup;  // 시즌 그룹
+  // 채널별 데이터 (FR)
+  fr_stock_amt: number;      // FR 재고금액
+  fr_stock_qty: number;      // FR 재고수량
+  fr_sales_amt: number;      // FR 매출금액
+  // 채널별 데이터 (OR + HQ)
+  or_stock_amt: number;      // OR+HQ 재고금액
+  or_stock_qty: number;      // OR+HQ 재고수량
+  or_sales_amt: number;      // OR+HQ 매출금액
 }
 
 // 중분류별 집계 데이터

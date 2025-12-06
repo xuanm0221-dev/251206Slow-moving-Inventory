@@ -63,7 +63,8 @@ function buildAvailableMonthsQuery(brand: string): string {
   `;
 }
 
-// 정체재고 분석 메인 쿼리 생성
+// 정체재고 분석 메인 쿼리 생성 (채널별 데이터 포함)
+// 정체/정상 판단은 전체(FR+OR+HQ) 기준으로 수행하고, 채널별 재고/판매 데이터를 별도로 집계
 function buildStagnantStockQuery(
   brand: string,
   targetMonth: string,
@@ -74,10 +75,11 @@ function buildStagnantStockQuery(
   
   return `
     WITH 
-    -- 판매 데이터 집계
-    sales_agg AS (
+    -- 채널별 판매 데이터 집계
+    sales_by_channel AS (
       SELECT 
         ${dimConfig.salesKey} AS dimension_key,
+        d.fr_or_cls AS channel,
         MAX(s.prdt_cd) AS prdt_cd,
         MAX(s.color_cd) AS color_cd,
         MAX(s.size_cd) AS size_cd,
@@ -98,14 +100,31 @@ function buildStagnantStockQuery(
       WHERE TO_CHAR(s.sale_dt, 'YYYYMM') = '${targetMonth}'
         AND s.brd_cd = '${brand}'
         AND p.prdt_hrrc1_nm = 'ACC'
-        AND d.fr_or_cls IN ('FR', 'OR')
-      GROUP BY ${dimConfig.salesKey}
+        AND d.fr_or_cls IN ('FR', 'OR', 'HQ')
+      GROUP BY ${dimConfig.salesKey}, d.fr_or_cls
     ),
     
-    -- 재고 데이터 집계
-    stock_agg AS (
+    -- 전체 기준 판매 집계 (정체/정상 판단용)
+    sales_agg AS (
+      SELECT 
+        dimension_key,
+        MAX(prdt_cd) AS prdt_cd,
+        MAX(color_cd) AS color_cd,
+        MAX(size_cd) AS size_cd,
+        MAX(prdt_nm) AS prdt_nm,
+        MAX(season) AS season,
+        MAX(mid_category_kr) AS mid_category_kr,
+        SUM(sales_tag_amt) AS sales_tag_amt,
+        SUM(sales_qty) AS sales_qty
+      FROM sales_by_channel
+      GROUP BY dimension_key
+    ),
+    
+    -- 채널별 재고 데이터 집계
+    stock_by_channel AS (
       SELECT 
         ${dimConfig.stockKey} AS dimension_key,
+        COALESCE(c.fr_or_cls, 'HQ') AS channel,
         MAX(a.prdt_cd) AS prdt_cd,
         MAX(a.color_cd) AS color_cd,
         MAX(a.size_cd) AS size_cd,
@@ -126,10 +145,26 @@ function buildStagnantStockQuery(
       WHERE a.yymm = '${targetMonth}'
         AND a.brd_cd = '${brand}'
         AND b.prdt_hrrc1_nm = 'ACC'
-      GROUP BY ${dimConfig.stockKey}
+      GROUP BY ${dimConfig.stockKey}, COALESCE(c.fr_or_cls, 'HQ')
     ),
     
-    -- 중분류별 재고 합계 (정체재고 분모)
+    -- 전체 기준 재고 집계 (정체/정상 판단용)
+    stock_agg AS (
+      SELECT 
+        dimension_key,
+        MAX(prdt_cd) AS prdt_cd,
+        MAX(color_cd) AS color_cd,
+        MAX(size_cd) AS size_cd,
+        MAX(prdt_nm) AS prdt_nm,
+        MAX(season) AS season,
+        MAX(mid_category_kr) AS mid_category_kr,
+        SUM(stock_amt) AS stock_amt,
+        SUM(stock_qty) AS stock_qty
+      FROM stock_by_channel
+      GROUP BY dimension_key
+    ),
+    
+    -- 중분류별 재고 합계 (정체재고 분모) - 전체 기준
     mid_category_totals AS (
       SELECT 
         mid_category_kr,
@@ -139,8 +174,8 @@ function buildStagnantStockQuery(
       GROUP BY mid_category_kr
     ),
     
-    -- 판매와 재고 JOIN
-    combined AS (
+    -- 전체 기준 판매와 재고 JOIN (정체/정상 판단용)
+    combined_total AS (
       SELECT 
         COALESCE(st.dimension_key, sa.dimension_key) AS dimension_key,
         COALESCE(st.prdt_cd, sa.prdt_cd) AS prdt_cd,
@@ -158,32 +193,86 @@ function buildStagnantStockQuery(
       LEFT JOIN mid_category_totals mt ON COALESCE(st.mid_category_kr, sa.mid_category_kr) = mt.mid_category_kr
       WHERE COALESCE(st.stock_amt, 0) > 0
         AND COALESCE(st.mid_category_kr, sa.mid_category_kr) IN ('신발', '모자', '가방', '기타')
+    ),
+    
+    -- 정체/정상 상태 판단 (전체 기준)
+    with_status AS (
+      SELECT 
+        dimension_key,
+        prdt_cd,
+        color_cd,
+        size_cd,
+        prdt_nm,
+        mid_category_kr,
+        season,
+        stock_qty,
+        stock_amt,
+        sales_tag_amt,
+        stock_amt_total_mid,
+        CASE 
+          WHEN stock_amt_total_mid > 0 THEN sales_tag_amt / stock_amt_total_mid
+          ELSE 0
+        END AS ratio,
+        CASE 
+          WHEN stock_amt_total_mid > 0 AND (sales_tag_amt / stock_amt_total_mid) < ${thresholdRatio}
+          THEN '정체재고'
+          ELSE '정상재고'
+        END AS status
+      FROM combined_total
+    ),
+    
+    -- 채널별 재고/판매 데이터와 정체/정상 상태 조인
+    channel_data AS (
+      SELECT 
+        ws.dimension_key,
+        stc.channel,
+        COALESCE(stc.stock_amt, 0) AS channel_stock_amt,
+        COALESCE(stc.stock_qty, 0) AS channel_stock_qty,
+        COALESCE(slc.sales_tag_amt, 0) AS channel_sales_amt
+      FROM with_status ws
+      LEFT JOIN stock_by_channel stc ON ws.dimension_key = stc.dimension_key
+      LEFT JOIN sales_by_channel slc ON ws.dimension_key = slc.dimension_key AND stc.channel = slc.channel
     )
     
-    -- 최종 결과: 비율 계산 및 상태 구분
+    -- 최종 결과: 전체 기준 정체/정상 + 채널별 재고/판매
     SELECT 
-      dimension_key,
-      prdt_cd,
-      color_cd,
-      size_cd,
-      prdt_nm,
-      mid_category_kr,
-      season,
-      stock_qty,
-      stock_amt,
-      sales_tag_amt,
-      stock_amt_total_mid,
-      CASE 
-        WHEN stock_amt_total_mid > 0 THEN sales_tag_amt / stock_amt_total_mid
-        ELSE 0
-      END AS ratio,
-      CASE 
-        WHEN stock_amt_total_mid > 0 AND (sales_tag_amt / stock_amt_total_mid) < ${thresholdRatio}
-        THEN '정체재고'
-        ELSE '정상재고'
-      END AS status
-    FROM combined
-    ORDER BY stock_amt DESC
+      ws.dimension_key,
+      ws.prdt_cd,
+      ws.color_cd,
+      ws.size_cd,
+      ws.prdt_nm,
+      ws.mid_category_kr,
+      ws.season,
+      ws.stock_qty,
+      ws.stock_amt,
+      ws.sales_tag_amt,
+      ws.stock_amt_total_mid,
+      ws.ratio,
+      ws.status,
+      -- 채널별 재고/판매 (FR)
+      COALESCE(fr.channel_stock_amt, 0) AS fr_stock_amt,
+      COALESCE(fr.channel_stock_qty, 0) AS fr_stock_qty,
+      COALESCE(fr.channel_sales_amt, 0) AS fr_sales_amt,
+      -- 채널별 재고/판매 (OR + HQ)
+      COALESCE(or_hq.or_stock_amt, 0) AS or_stock_amt,
+      COALESCE(or_hq.or_stock_qty, 0) AS or_stock_qty,
+      COALESCE(or_hq.or_sales_amt, 0) AS or_sales_amt
+    FROM with_status ws
+    LEFT JOIN (
+      SELECT dimension_key, channel_stock_amt, channel_stock_qty, channel_sales_amt
+      FROM channel_data WHERE channel = 'FR'
+    ) fr ON ws.dimension_key = fr.dimension_key
+    LEFT JOIN (
+      SELECT 
+        dimension_key, 
+        SUM(channel_stock_amt) AS or_stock_amt,
+        SUM(channel_stock_qty) AS or_stock_qty,
+        SUM(channel_sales_amt) AS or_sales_amt
+      FROM channel_data 
+      WHERE channel IN ('OR', 'HQ')
+      GROUP BY dimension_key
+    ) or_hq ON ws.dimension_key = or_hq.dimension_key
+    ORDER BY ws.stock_amt DESC
   `;
 }
 
@@ -285,7 +374,7 @@ export default async function handler(
     const mainQuery = buildStagnantStockQuery(brand, targetMonth, dimTab, thresholdRatio);
     const mainResult = await runQuery(mainQuery);
 
-    // 3. 결과 변환
+    // 3. 결과 변환 (채널별 데이터 포함)
     const items: StagnantStockItem[] = mainResult.map((row: any) => {
       const status: StockStatus = row.STATUS === "정체재고" ? "정체재고" : "정상재고";
       const season = row.SEASON || "";
@@ -299,12 +388,21 @@ export default async function handler(
         size_cd: row.SIZE_CD,
         mid_category_kr: row.MID_CATEGORY_KR || "기타",
         season,
+        // 전체 기준 데이터
         stock_qty: Number(row.STOCK_QTY) || 0,
         stock_amt: Number(row.STOCK_AMT) || 0,
         sales_tag_amt: Number(row.SALES_TAG_AMT) || 0,
         ratio: Number(row.RATIO) || 0,
         status,
         seasonGroup,
+        // 채널별 데이터 (FR)
+        fr_stock_amt: Number(row.FR_STOCK_AMT) || 0,
+        fr_stock_qty: Number(row.FR_STOCK_QTY) || 0,
+        fr_sales_amt: Number(row.FR_SALES_AMT) || 0,
+        // 채널별 데이터 (OR + HQ)
+        or_stock_amt: Number(row.OR_STOCK_AMT) || 0,
+        or_stock_qty: Number(row.OR_STOCK_QTY) || 0,
+        or_sales_amt: Number(row.OR_SALES_AMT) || 0,
       };
     });
 
