@@ -18,6 +18,8 @@ import CollapsibleSection from "./CollapsibleSection";
 
 interface StagnantStockAnalysisProps {
   brand: Brand;
+  dimensionTab?: DimensionTab;
+  onDimensionTabChange?: (tab: DimensionTab) => void;
 }
 
 // 숫자 포맷팅 함수
@@ -485,7 +487,11 @@ function DetailTable({
   );
 }
 
-export default function StagnantStockAnalysis({ brand }: StagnantStockAnalysisProps) {
+export default function StagnantStockAnalysis({ 
+  brand, 
+  dimensionTab: externalDimensionTab,
+  onDimensionTabChange 
+}: StagnantStockAnalysisProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<StagnantStockResponse | null>(null);
@@ -494,7 +500,17 @@ export default function StagnantStockAnalysis({ brand }: StagnantStockAnalysisPr
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [targetMonth, setTargetMonth] = useState<string>("");
   const [thresholdPct, setThresholdPct] = useState<number>(0.01);
-  const [dimensionTab, setDimensionTab] = useState<DimensionTab>("스타일");
+  const [internalDimensionTab, setInternalDimensionTab] = useState<DimensionTab>("스타일");
+  
+  // 외부에서 제어되면 외부 값 사용, 아니면 내부 상태 사용
+  const dimensionTab = externalDimensionTab ?? internalDimensionTab;
+  const setDimensionTab = (tab: DimensionTab) => {
+    if (onDimensionTabChange) {
+      onDimensionTabChange(tab);
+    } else {
+      setInternalDimensionTab(tab);
+    }
+  };
   
   // 정렬 상태
   const [sortConfig, setSortConfig] = useState<SortConfig>({

@@ -15,9 +15,11 @@ import {
 } from "recharts";
 import type { Brand } from "@/types/sales";
 import { BRAND_CODE_MAP } from "@/types/stagnantStock";
+import type { DimensionTab } from "@/types/stagnantStock";
 
 interface InventorySeasonChartProps {
   brand: Brand;
+  dimensionTab?: DimensionTab;
 }
 
 // 시즌 그룹 타입
@@ -250,7 +252,7 @@ const SalesTooltip = ({ active, payload, label, data2024, data2025 }: SalesToolt
   );
 };
 
-export default function InventorySeasonChart({ brand }: InventorySeasonChartProps) {
+export default function InventorySeasonChart({ brand, dimensionTab = "스타일" }: InventorySeasonChartProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<InventorySeasonChartResponse | null>(null);
@@ -258,7 +260,7 @@ export default function InventorySeasonChart({ brand }: InventorySeasonChartProp
 
   const brandCode = BRAND_CODE_MAP[brand] || "M";
 
-  // 데이터 로드
+  // 데이터 로드 (dimensionTab 변경 시 다시 로드)
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -267,6 +269,7 @@ export default function InventorySeasonChart({ brand }: InventorySeasonChartProp
         const params = new URLSearchParams({
           brand: brandCode,
           thresholdPct: "0.01",
+          dimensionTab: dimensionTab,
         });
         const response = await fetch(`/api/inventory-season-chart?${params}`);
         if (!response.ok) {
@@ -281,7 +284,7 @@ export default function InventorySeasonChart({ brand }: InventorySeasonChartProp
       }
     };
     fetchData();
-  }, [brandCode]);
+  }, [brandCode, dimensionTab]);
 
   // 차트 데이터 생성
   const chartData = useMemo(() => {

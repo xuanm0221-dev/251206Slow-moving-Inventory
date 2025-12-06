@@ -4,6 +4,29 @@ import { runQuery } from "../../lib/snowflake";
 // 시즌 그룹 타입
 type SeasonGroup = "정체재고" | "당시즌" | "차기시즌" | "과시즌";
 
+// 분석 단위 타입
+type DimensionTab = "스타일" | "컬러" | "사이즈" | "컬러&사이즈";
+
+// 단위 탭별 KEY 컬럼 매핑
+const DIMENSION_KEY_MAP: Record<DimensionTab, { stockKey: string; salesKey: string }> = {
+  "스타일": {
+    stockKey: "a.prdt_cd",
+    salesKey: "s.prdt_cd",
+  },
+  "컬러": {
+    stockKey: "a.prdt_cd || '_' || a.color_cd",
+    salesKey: "s.prdt_cd || '_' || s.color_cd",
+  },
+  "사이즈": {
+    stockKey: "a.prdt_cd || '_' || a.size_cd",
+    salesKey: "s.prdt_cd || '_' || s.size_cd",
+  },
+  "컬러&사이즈": {
+    stockKey: "a.prdt_scs_cd",
+    salesKey: "s.prdt_scs_cd",
+  },
+};
+
 // 월별 시즌 데이터
 interface MonthSeasonData {
   month: string; // YYYYMM
@@ -37,55 +60,59 @@ function getYearConfig(): { currentYear: string; nextYear: string } {
   };
 }
 
-// 재고 쿼리 (월별, 시즌별 집계)
+// 재고 쿼리 (월별, 시즌별 집계) - dimensionTab에 따라 집계 기준 변경
 function buildMonthlyStockQuery(
   brand: string,
   yearPrefix: string, // "2024" or "2025"
   thresholdRatio: number,
   currentYear: string,
-  nextYear: string
+  nextYear: string,
+  dimensionTab: DimensionTab = "스타일"
 ): string {
   // 전년 시즌 구분용: 2024년이면 당시즌=24*, 차기=25*, 2025년이면 당시즌=25*, 차기=26*
   const yearShort = yearPrefix.slice(-2); // "24" or "25"
   const nextYearShort = String(parseInt(yearShort) + 1).padStart(2, "0");
+  
+  // 분석단위별 dimension key
+  const dimConfig = DIMENSION_KEY_MAP[dimensionTab];
 
   return `
     WITH 
-    -- 월별 재고 데이터
+    -- 월별 재고 데이터 (dimension 기준)
     stock_monthly AS (
       SELECT 
         a.yymm AS month,
-        a.prdt_cd,
-        a.sesn AS season,
-        CASE
+        ${dimConfig.stockKey} AS dimension_key,
+        MAX(a.sesn) AS season,
+        MAX(CASE
           WHEN b.prdt_hrrc2_nm = 'Shoes' THEN '신발'
           WHEN b.prdt_hrrc2_nm = 'Headwear' THEN '모자'
           WHEN b.prdt_hrrc2_nm = 'Bag' THEN '가방'
           WHEN b.prdt_hrrc2_nm = 'Acc_etc' THEN '기타'
           ELSE b.prdt_hrrc2_nm
-        END AS mid_category_kr,
+        END) AS mid_category_kr,
         SUM(a.stock_tag_amt_expected) AS stock_amt
       FROM fnf.chn.dw_stock_m a
       LEFT JOIN fnf.sap_fnf.mst_prdt b ON a.prdt_cd = b.prdt_cd
       WHERE a.yymm >= '${yearPrefix}01' AND a.yymm <= '${yearPrefix}12'
         AND a.brd_cd = '${brand}'
         AND b.prdt_hrrc1_nm = 'ACC'
-      GROUP BY a.yymm, a.prdt_cd, a.sesn, b.prdt_hrrc2_nm
+      GROUP BY a.yymm, ${dimConfig.stockKey}
     ),
     
-    -- 월별 판매 데이터
+    -- 월별 판매 데이터 (dimension 기준)
     sales_monthly AS (
       SELECT 
         TO_CHAR(s.sale_dt, 'YYYYMM') AS month,
-        s.prdt_cd,
-        SUBSTR(s.prdt_cd, 2, 3) AS season,
-        CASE
+        ${dimConfig.salesKey} AS dimension_key,
+        MAX(SUBSTR(s.prdt_cd, 2, 3)) AS season,
+        MAX(CASE
           WHEN p.prdt_hrrc2_nm = 'Shoes' THEN '신발'
           WHEN p.prdt_hrrc2_nm = 'Headwear' THEN '모자'
           WHEN p.prdt_hrrc2_nm = 'Bag' THEN '가방'
           WHEN p.prdt_hrrc2_nm = 'Acc_etc' THEN '기타'
           ELSE p.prdt_hrrc2_nm
-        END AS mid_category_kr,
+        END) AS mid_category_kr,
         SUM(s.tag_amt) AS sales_amt
       FROM fnf.chn.dw_sale s
       LEFT JOIN fnf.sap_fnf.mst_prdt p ON s.prdt_cd = p.prdt_cd
@@ -95,7 +122,7 @@ function buildMonthlyStockQuery(
         AND s.brd_cd = '${brand}'
         AND p.prdt_hrrc1_nm = 'ACC'
         AND d.fr_or_cls IN ('FR', 'OR')
-      GROUP BY TO_CHAR(s.sale_dt, 'YYYYMM'), s.prdt_cd, p.prdt_hrrc2_nm
+      GROUP BY TO_CHAR(s.sale_dt, 'YYYYMM'), ${dimConfig.salesKey}
     ),
     
     -- 월별 중분류별 재고 합계 (정체재고 판단 분모)
@@ -109,11 +136,11 @@ function buildMonthlyStockQuery(
       GROUP BY month, mid_category_kr
     ),
     
-    -- 재고+판매 조인하여 정체 여부 판단
+    -- 재고+판매 조인하여 정체 여부 판단 (dimension 기준)
     combined AS (
       SELECT 
         st.month,
-        st.prdt_cd,
+        st.dimension_key,
         st.season,
         st.mid_category_kr,
         st.stock_amt,
@@ -126,7 +153,7 @@ function buildMonthlyStockQuery(
         END AS status
       FROM stock_monthly st
       LEFT JOIN sales_monthly sa 
-        ON st.month = sa.month AND st.prdt_cd = sa.prdt_cd
+        ON st.month = sa.month AND st.dimension_key = sa.dimension_key
       LEFT JOIN mid_category_totals mt 
         ON st.month = mt.month AND st.mid_category_kr = mt.mid_category_kr
       WHERE st.stock_amt > 0
@@ -137,7 +164,7 @@ function buildMonthlyStockQuery(
     with_season_group AS (
       SELECT 
         month,
-        prdt_cd,
+        dimension_key,
         season,
         mid_category_kr,
         stock_amt,
@@ -214,7 +241,7 @@ export default async function handler(
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { brand, thresholdPct } = req.query;
+  const { brand, thresholdPct, dimensionTab } = req.query;
 
   // 파라미터 검증
   if (!brand || typeof brand !== "string") {
@@ -223,17 +250,18 @@ export default async function handler(
 
   const threshold = parseFloat(thresholdPct as string) || 0.01;
   const thresholdRatio = threshold / 100; // 0.01% → 0.0001
+  const dimTab = (dimensionTab as DimensionTab) || "스타일";
 
   const { currentYear, nextYear } = getYearConfig();
 
   try {
     // 2024년 데이터 조회
-    const query2024 = buildMonthlyStockQuery(brand, "2024", thresholdRatio, "24", "25");
+    const query2024 = buildMonthlyStockQuery(brand, "2024", thresholdRatio, "24", "25", dimTab);
     const result2024 = await runQuery(query2024);
     const data2024 = transformResults(result2024);
 
     // 2025년 데이터 조회
-    const query2025 = buildMonthlyStockQuery(brand, "2025", thresholdRatio, "25", "26");
+    const query2025 = buildMonthlyStockQuery(brand, "2025", thresholdRatio, "25", "26", dimTab);
     const result2025 = await runQuery(query2025);
     const data2025 = transformResults(result2025);
 
