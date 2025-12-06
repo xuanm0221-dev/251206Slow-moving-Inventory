@@ -67,7 +67,7 @@ const COLORS = {
     당시즌: "#2563EB",    // 파랑
     차기시즌: "#7C3AED",  // 보라
   },
-  // YOY 라인
+  // YOY 라인 (매출액 기준)
   yoy: "#FDA4AF",  // 파스텔 핑크
 };
 
@@ -198,6 +198,11 @@ const SalesTooltip = ({ active, payload, label, data2024, data2025 }: SalesToolt
 
   const daysInMonth = getDaysInMonth(curr.month);
   const totalStockWeeks = calcStockWeeks(curr.total_stock_amt, curr.total_sales_amt, daysInMonth);
+  
+  // 매출액 기준 YOY 계산
+  const salesYoy = prev?.total_sales_amt > 0 
+    ? ((curr.total_sales_amt / prev.total_sales_amt - 1) * 100).toFixed(1) 
+    : "-";
 
   return (
     <div className="bg-white border border-gray-300 rounded-lg p-3 text-xs shadow-lg min-w-[260px]">
@@ -211,6 +216,10 @@ const SalesTooltip = ({ active, payload, label, data2024, data2025 }: SalesToolt
         <div className="flex justify-between pl-2">
           <span className="text-gray-600">전체 매출액:</span>
           <span className="font-medium">{formatNumber(curr.total_sales_amt / 1_000_000)}M</span>
+        </div>
+        <div className="flex justify-between pl-2">
+          <span className="text-gray-600">매출액 YOY:</span>
+          <span className="font-medium text-pink-500">{salesYoy}%</span>
         </div>
         <div className="pl-2 mt-1 text-gray-500">시즌별 판매 (당년):</div>
         {SEASON_ORDER.slice().reverse().map((season) => (
@@ -252,6 +261,9 @@ const SalesTooltip = ({ active, payload, label, data2024, data2025 }: SalesToolt
   );
 };
 
+// 데이터 기준월 제한 상수 (2025년 11월까지만 표시)
+const MAX_MONTH = "202511";
+
 export default function InventorySeasonChart({ brand, dimensionTab = "스타일" }: InventorySeasonChartProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -290,17 +302,16 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
   const chartData = useMemo(() => {
     if (!data) return [];
 
-    return data.year2025.map((curr, idx) => {
+    // [필터링] 2025년 11월까지만 표시 (막대차트 및 정체재고 계산 기준월 제한)
+    const filtered2025 = data.year2025.filter(d => d.month <= MAX_MONTH);
+
+    return filtered2025.map((curr, idx) => {
       const prev = data.year2024[idx];
       const monthNum = parseInt(curr.month.slice(-2));
-      
-      // YOY 계산
-      const yoy = prev?.total_stock_amt > 0 
-        ? (curr.total_stock_amt / prev.total_stock_amt - 1) * 100 
-        : 0;
 
       if (mode === "전년대비") {
         // 전년대비 모드: 왼쪽=전년 재고, 오른쪽=당년 재고
+        // [YOY 미포함] 전년대비 탭에서는 YOY 라인을 표시하지 않음
         return {
           month: `2025-${String(monthNum).padStart(2, "0")}`,
           monthIdx: idx,
@@ -314,14 +325,17 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
           curr_당시즌: (curr.당시즌?.stock_amt || 0) / 1_000_000,
           curr_차기시즌: (curr.차기시즌?.stock_amt || 0) / 1_000_000,
           curr_정체재고: (curr.정체재고?.stock_amt || 0) / 1_000_000,
-          // YOY
-          yoy,
           // 비율 라벨용 데이터
           prev_total: (prev?.total_stock_amt || 0) / 1_000_000,
           curr_total: curr.total_stock_amt / 1_000_000,
         };
       } else {
         // 매출액대비 모드: 왼쪽=당년 판매, 오른쪽=당년 재고
+        // [매출액 기준 YOY 계산] (당년 매출 / 전년 매출 - 1) * 100
+        const salesYoy = prev?.total_sales_amt > 0 
+          ? (curr.total_sales_amt / prev.total_sales_amt - 1) * 100 
+          : 0;
+
         return {
           month: `2025-${String(monthNum).padStart(2, "0")}`,
           monthIdx: idx,
@@ -335,8 +349,8 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
           curr_당시즌: (curr.당시즌?.stock_amt || 0) / 1_000_000,
           curr_차기시즌: (curr.차기시즌?.stock_amt || 0) / 1_000_000,
           curr_정체재고: (curr.정체재고?.stock_amt || 0) / 1_000_000,
-          // YOY (재고 기준)
-          yoy,
+          // [매출액 기준 YOY] 매출액대비 탭에서만 사용
+          yoy: salesYoy,
           // 합계
           sales_total: curr.total_sales_amt / 1_000_000,
           curr_total: curr.total_stock_amt / 1_000_000,
@@ -478,21 +492,24 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
                 style: { fontSize: 11, fill: "#6b7280" }
               }}
             />
-            <YAxis 
-              yAxisId="right"
-              orientation="right"
-              tick={{ fontSize: 11, fill: "#FDA4AF" }}
-              axisLine={{ stroke: "#FDA4AF" }}
-              tickFormatter={(v) => `${v.toFixed(0)}%`}
-              domain={[-50, 50]}
-              label={{ 
-                value: "YOY", 
-                angle: 0, 
-                position: "top",
-                offset: 10,
-                style: { fontSize: 11, fill: "#FDA4AF" }
-              }}
-            />
+            {/* [오른쪽 Y축] 매출액대비 탭에서만 YOY 축 표시 */}
+            {mode === "매출액대비" && (
+              <YAxis 
+                yAxisId="right"
+                orientation="right"
+                tick={{ fontSize: 11, fill: "#FDA4AF" }}
+                axisLine={{ stroke: "#FDA4AF" }}
+                tickFormatter={(v) => `${v.toFixed(0)}%`}
+                domain={[-50, 50]}
+                label={{ 
+                  value: "매출액 YOY", 
+                  angle: 0, 
+                  position: "top",
+                  offset: 10,
+                  style: { fontSize: 11, fill: "#FDA4AF" }
+                }}
+              />
+            )}
             
             <Tooltip 
               content={
@@ -515,6 +532,7 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
                 <Bar yAxisId="left" dataKey="curr_당시즌" stackId="curr" fill={COLORS.curr.당시즌} name="25년 당시즌" />
                 <Bar yAxisId="left" dataKey="curr_차기시즌" stackId="curr" fill={COLORS.curr.차기시즌} name="25년 차기시즌" />
                 <Bar yAxisId="left" dataKey="curr_정체재고" stackId="curr" fill={COLORS.curr.정체재고} name="25년 정체재고" label={renderCustomLabel} />
+                {/* [전년대비 탭] YOY 라인 렌더링 안함 - 막대차트만 표시 */}
               </>
             ) : (
               <>
@@ -529,19 +547,19 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
                 <Bar yAxisId="left" dataKey="curr_당시즌" stackId="curr" fill={COLORS.curr.당시즌} name="25년 재고 당시즌" />
                 <Bar yAxisId="left" dataKey="curr_차기시즌" stackId="curr" fill={COLORS.curr.차기시즌} name="25년 재고 차기시즌" />
                 <Bar yAxisId="left" dataKey="curr_정체재고" stackId="curr" fill={COLORS.curr.정체재고} name="25년 재고 정체재고" label={renderCustomLabel} />
+
+                {/* [매출액대비 탭] 매출액 기준 YOY 라인 - 전년 동월 대비 매출액 증감률(%) */}
+                <Line 
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="yoy"
+                  stroke={COLORS.yoy}
+                  strokeWidth={2}
+                  dot={{ fill: COLORS.yoy, r: 4 }}
+                  name="매출액 YOY"
+                />
               </>
             )}
-
-            {/* YOY 라인 */}
-            <Line 
-              yAxisId="right"
-              type="monotone"
-              dataKey="yoy"
-              stroke={COLORS.yoy}
-              strokeWidth={2}
-              dot={{ fill: COLORS.yoy, r: 4 }}
-              name="YOY"
-            />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -589,6 +607,7 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
                   <span>정체재고</span>
                 </div>
               </div>
+              {/* [전년대비 탭] YOY 범례 표시 안함 */}
             </>
           ) : (
             <>
@@ -615,15 +634,15 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
                 <span className="font-medium">당년-재고:</span>
                 <span className="text-gray-500">(동일 색상)</span>
               </div>
+              {/* [매출액대비 탭] 매출액 기준 YOY 범례 표시 */}
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-0.5" style={{ backgroundColor: COLORS.yoy }}></span>
+                <span>매출액 YOY</span>
+              </div>
             </>
           )}
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-0.5" style={{ backgroundColor: COLORS.yoy }}></span>
-            <span>YOY</span>
-          </div>
         </div>
       </div>
     </div>
   );
 }
-
