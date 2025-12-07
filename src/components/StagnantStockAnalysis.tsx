@@ -767,118 +767,102 @@ export default function StagnantStockAnalysis({
         icon="📊"
         iconColor="text-orange-500"
         defaultOpen={false}
+        headerAction={
+          <div className="text-xs text-gray-500 text-right">
+            <div>2025년 기준: 당시즌 25N,25F,25S | 차기시즌 26N,26S,26F~ | 과시즌 그외(정체제외) | 과시즌中 정체재고, A상품 당월판매 ÷ 해당상품이 속하는 당월말 중분류 재고금액 {"<"} {thresholdPct}%</div>
+            <div>2024년 기준: 당시즌 24N,24F,24S | 차기시즌 25N,25S,25F~ | 과시즌 그외(정체제외) | 과시즌中 정체재고, A상품 당월판매 ÷ 해당상품이 속하는 당월말 중분류 재고금액 {"<"} {thresholdPct}%</div>
+          </div>
+        }
       >
         {/* 컨트롤 영역 */}
         <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <div className="flex flex-wrap items-end gap-4">
-            {/* 기준월 */}
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">기준월</label>
-              <select
-                value={targetMonth}
-                onChange={(e) => setTargetMonth(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {availableMonths.map(m => (
-                  <option key={m} value={m}>{formatMonth(m)}</option>
-                ))}
-              </select>
-            </div>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            {/* 왼쪽: 컨트롤들 */}
+            <div className="flex flex-wrap items-end gap-4">
+              {/* 기준월 */}
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">기준월</label>
+                <select
+                  value={targetMonth}
+                  onChange={(e) => setTargetMonth(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {availableMonths.map(m => (
+                    <option key={m} value={m}>{formatMonth(m)}</option>
+                  ))}
+                </select>
+              </div>
 
-            {/* 정체재고 기준 */}
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">정체재고 기준 (%)</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={thresholdPct}
-                  onChange={(e) => setThresholdPct(parseFloat(e.target.value) || 0)}
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="range"
-                  value={thresholdPct}
-                  onChange={(e) => setThresholdPct(parseFloat(e.target.value))}
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  className="w-32"
-                />
+              {/* 정체재고 기준 */}
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">정체재고 기준 (%)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={thresholdPct}
+                    onChange={(e) => setThresholdPct(parseFloat(e.target.value) || 0)}
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="range"
+                    value={thresholdPct}
+                    onChange={(e) => setThresholdPct(parseFloat(e.target.value))}
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    className="w-32"
+                  />
+                </div>
+              </div>
+
+              {/* 채널 탭 */}
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">채널</label>
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                  {STAGNANT_CHANNEL_TABS.map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setChannelTab(tab)}
+                      className={`px-3 py-2 text-sm font-medium transition-colors ${
+                        channelTab === tab
+                          ? "bg-indigo-500 text-white"
+                          : "bg-white text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      {tab === "전체" ? "전체(FR+OR+HQ)" : tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 아이템 필터 탭 */}
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">아이템</label>
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                  {ITEM_FILTER_TABS.map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setItemTab(tab)}
+                      className={`px-3 py-2 text-sm font-medium transition-colors ${
+                        itemTab === tab
+                          ? "bg-orange-500 text-white"
+                          : "bg-white text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            {/* 단위 탭 */}
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">분석 단위</label>
-              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-                {DIMENSION_TABS.map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setDimensionTab(tab)}
-                    className={`px-3 py-2 text-sm font-medium transition-colors ${
-                      dimensionTab === tab
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 채널 탭 */}
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">채널</label>
-              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-                {STAGNANT_CHANNEL_TABS.map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setChannelTab(tab)}
-                    className={`px-3 py-2 text-sm font-medium transition-colors ${
-                      channelTab === tab
-                        ? "bg-indigo-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    {tab === "전체" ? "전체(FR+OR+HQ)" : tab}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 아이템 필터 탭 */}
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">아이템</label>
-              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-                {ITEM_FILTER_TABS.map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setItemTab(tab)}
-                    className={`px-3 py-2 text-sm font-medium transition-colors ${
-                      itemTab === tab
-                        ? "bg-orange-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 범례 */}
-          <div className="mt-3 text-xs text-gray-500 flex justify-between items-center">
-            <span>
-              <span className="font-medium">정체재고 기준:</span> 해당 품번의 월 판매금액 ÷ 중분류 전체 재고금액 {"<"} {thresholdPct}% 이면 정체재고로 분류
-            </span>
-            <span className="text-right">
+            {/* 오른쪽: 메타 정보 */}
+            <div className="text-xs text-gray-500 text-right self-end">
               기준월: {formatMonth(targetMonth)} | 브랜드: {brand} | 분석단위: {dimensionTab} | 정체기준: {thresholdPct}% | 당해연도: 2025 | 차기연도: 2026
-            </span>
+            </div>
           </div>
         </div>
 
@@ -1041,17 +1025,6 @@ export default function StagnantStockAnalysis({
               )}
             </div>
 
-            {/* 메타 정보 */}
-            <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-500">
-              <div className="flex flex-wrap gap-4">
-                <span>기준월: {formatMonth(data.meta.targetMonth)}</span>
-                <span>브랜드: {brand}</span>
-                <span>분석단위: {data.meta.dimensionTab}</span>
-                <span>정체기준: {data.meta.thresholdPct}%</span>
-                <span>당해연도: 20{data.meta.currentYear}</span>
-                <span>차기연도: 20{data.meta.nextYear}</span>
-              </div>
-            </div>
           </>
         )}
 

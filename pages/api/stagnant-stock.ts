@@ -42,11 +42,21 @@ function getYearConfig(): { currentYear: string; nextYear: string } {
   };
 }
 
-// 시즌 그룹 결정
-function getSeasonGroup(status: StockStatus, season: string, currentYear: string, nextYear: string): SeasonGroup {
-  if (status === "정체재고") return "정체재고";
+// 시즌 그룹 결정 - 시즌 구분 선행, 과시즌만 정체재고 판단
+// 변경: 모든 상품에 정체재고 여부 판단 → 과시즌 상품에만 정체재고 여부 판단
+function getSeasonGroup(
+  season: string, 
+  ratio: number, 
+  thresholdRatio: number,
+  currentYear: string, 
+  nextYear: string
+): SeasonGroup {
+  // 1. 먼저 시즌 구분 (당시즌, 차기시즌은 정체재고로 바뀌지 않음)
   if (season && season.startsWith(currentYear)) return "당시즌";
   if (season && season.startsWith(nextYear)) return "차기시즌";
+  
+  // 2. 과시즌인 경우만 정체재고 여부 판단
+  if (ratio < thresholdRatio) return "정체재고";
   return "과시즌";
 }
 
@@ -375,10 +385,14 @@ export default async function handler(
     const mainResult = await runQuery(mainQuery);
 
     // 3. 결과 변환 (채널별 데이터 포함)
+    // 변경: 시즌 구분 선행 → 과시즌만 정체재고 판단
     const items: StagnantStockItem[] = mainResult.map((row: any) => {
-      const status: StockStatus = row.STATUS === "정체재고" ? "정체재고" : "정상재고";
       const season = row.SEASON || "";
-      const seasonGroup = getSeasonGroup(status, season, currentYear, nextYear);
+      const ratio = Number(row.RATIO) || 0;
+      // seasonGroup 결정: 시즌 구분 먼저, 과시즌인 경우만 ratio로 정체재고 판단
+      const seasonGroup = getSeasonGroup(season, ratio, thresholdRatio, currentYear, nextYear);
+      // status는 seasonGroup 기반으로 결정 (정체재고이면 정체재고, 아니면 정상재고)
+      const status: StockStatus = seasonGroup === "정체재고" ? "정체재고" : "정상재고";
 
       return {
         dimensionKey: row.DIMENSION_KEY || "",

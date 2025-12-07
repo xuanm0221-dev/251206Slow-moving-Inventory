@@ -57,7 +57,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
   const [actualArrivalData, setActualArrivalData] = useState<ActualArrivalSummaryData | null>(null);
   const [stockWeekWindow, setStockWeekWindow] = useState<StockWeekWindow>(1);
   const [productTypeTab, setProductTypeTab] = useState<ProductTypeTab>("전체"); // 상품 타입 탭 (전체/주력/아울렛)
-  const [stagnantDimensionTab, setStagnantDimensionTab] = useState<DimensionTab>("스타일"); // 정체재고 분석 단위
+  const [stagnantDimensionTab, setStagnantDimensionTab] = useState<DimensionTab>("컬러&사이즈"); // 정체재고 분석 단위
   
   // 특정 아이템의 stockWeek 변경 핸들러
   const handleStockWeekChange = (itemTab: ItemTab, value: number) => {
@@ -376,7 +376,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
             )}
 
             {/* 1.75. 재고택금액 추이 (시즌별) - 전년대비/매출액대비 전환 차트 */}
-            <InventorySeasonChart brand={brand} dimensionTab={stagnantDimensionTab} />
+            <InventorySeasonChart brand={brand} dimensionTab={stagnantDimensionTab} onDimensionTabChange={setStagnantDimensionTab} />
 
             {/* 1.8. 정체재고 분석 */}
             <StagnantStockAnalysis 

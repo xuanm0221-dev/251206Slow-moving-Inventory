@@ -160,7 +160,7 @@ function buildMonthlyStockQuery(
         AND st.mid_category_kr IN ('신발', '모자', '가방', '기타')
     ),
     
-    -- 시즌 그룹 분류
+    -- 시즌 그룹 분류 (변경: 시즌 구분 선행, 과시즌만 정체재고 판단)
     with_season_group AS (
       SELECT 
         month,
@@ -169,11 +169,13 @@ function buildMonthlyStockQuery(
         mid_category_kr,
         stock_amt,
         sales_amt,
-        status,
+        stock_amt_total_mid,
         CASE 
-          WHEN status = '정체재고' THEN '정체재고'
+          -- 1. 먼저 시즌 구분 (당시즌, 차기시즌은 정체재고로 바뀌지 않음)
           WHEN season LIKE '${yearShort}%' THEN '당시즌'
           WHEN season LIKE '${nextYearShort}%' THEN '차기시즌'
+          -- 2. 과시즌인 경우만 ratio로 정체재고 판단
+          WHEN stock_amt_total_mid > 0 AND (sales_amt / stock_amt_total_mid) < ${thresholdRatio} THEN '정체재고'
           ELSE '과시즌'
         END AS season_group
       FROM combined

@@ -16,12 +16,13 @@ import {
   ReferenceLine,
 } from "recharts";
 import type { Brand } from "@/types/sales";
-import { BRAND_CODE_MAP } from "@/types/stagnantStock";
+import { BRAND_CODE_MAP, DIMENSION_TABS } from "@/types/stagnantStock";
 import type { DimensionTab } from "@/types/stagnantStock";
 
 interface InventorySeasonChartProps {
   brand: Brand;
   dimensionTab?: DimensionTab;
+  onDimensionTabChange?: (tab: DimensionTab) => void;
 }
 
 // 시즌 그룹 타입
@@ -266,7 +267,7 @@ const SalesTooltip = ({ active, payload, label, data2024, data2025 }: SalesToolt
 // 데이터 기준월 제한 상수 (2025년 11월까지만 표시)
 const MAX_MONTH = "202511";
 
-export default function InventorySeasonChart({ brand, dimensionTab = "스타일" }: InventorySeasonChartProps) {
+export default function InventorySeasonChart({ brand, dimensionTab = "스타일", onDimensionTabChange }: InventorySeasonChartProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<InventorySeasonChartResponse | null>(null);
@@ -562,12 +563,34 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
     <div className="card mb-4">
       {/* 헤더 */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-        <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <span className="text-purple-500">📊</span>
-          정상,정체 재고금액 추이
-        </h2>
+        {/* 왼쪽: 제목 + 분석 단위 탭 */}
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <span className="text-purple-500">📊</span>
+            정상,정체 재고금액 추이
+          </h2>
+          
+          {/* 분석 단위 탭 - iOS 세그먼트 컨트롤 스타일 */}
+          {onDimensionTabChange && (
+            <div className="flex p-1 bg-gray-100 rounded-lg">
+              {DIMENSION_TABS.map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => onDimensionTabChange(tab)}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                    dimensionTab === tab
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         
-        {/* 모드 전환 탭 */}
+        {/* 오른쪽: 모드 전환 탭 */}
         <div className="flex rounded-lg border border-gray-300 overflow-hidden">
           {(["전년대비", "매출액대비"] as ChartMode[]).map((tab) => (
             <button
