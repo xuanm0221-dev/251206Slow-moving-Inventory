@@ -195,71 +195,91 @@ const SalesTooltip = ({ active, payload, label, data2024, data2025 }: SalesToolt
 
   const monthIdx = chartData.monthIdx;
   const curr = data2025[monthIdx];
-  const prev = data2024[monthIdx];
 
   if (!curr) return null;
 
   const daysInMonth = getDaysInMonth(curr.month);
-  const totalStockWeeks = calcStockWeeks(curr.total_stock_amt, curr.total_sales_amt, daysInMonth);
-  
-  // 매출액 기준 YOY 계산 (전년/당년 비율)
-  const salesYoy = curr.total_sales_amt > 0 
-    ? ((prev?.total_sales_amt || 0) / curr.total_sales_amt * 100).toFixed(1) 
-    : "-";
+
+  // 테이블 행 데이터 구성: 전체, 차기시즌, 당시즌, 과시즌, 정체재고
+  const rows = [
+    {
+      name: "전체",
+      color: "#374151", // gray-700
+      sale: curr.total_sales_amt,
+      stock: curr.total_stock_amt,
+    },
+    {
+      name: "차기시즌",
+      color: COLORS.curr.차기시즌,
+      sale: curr.차기시즌.sales_amt,
+      stock: curr.차기시즌.stock_amt,
+    },
+    {
+      name: "당시즌",
+      color: COLORS.curr.당시즌,
+      sale: curr.당시즌.sales_amt,
+      stock: curr.당시즌.stock_amt,
+    },
+    {
+      name: "과시즌",
+      color: COLORS.curr.과시즌,
+      sale: curr.과시즌.sales_amt,
+      stock: curr.과시즌.stock_amt,
+    },
+    {
+      name: "정체재고",
+      color: COLORS.curr.정체재고,
+      sale: curr.정체재고.sales_amt,
+      stock: curr.정체재고.stock_amt,
+    },
+  ];
+
+  // 포맷 함수
+  const fmtM = (v: number) => `${formatNumber(Math.round(v / 1_000_000))}M`;
+  const fmtWeeks = (stock: number, sale: number) => {
+    if (sale <= 0) return "-";
+    const weekSales = (sale / daysInMonth) * 7;
+    if (weekSales <= 0) return "-";
+    return `${(stock / weekSales).toFixed(1)}주`;
+  };
 
   return (
-    <div className="bg-white border border-gray-300 rounded-lg p-3 text-xs shadow-lg min-w-[260px]">
-      <div className="font-bold text-gray-800 mb-2 border-b pb-2">
+    <div className="bg-white border border-gray-300 rounded-lg p-3 text-xs shadow-lg">
+      <div className="font-bold text-gray-800 mb-2 pb-2 border-b">
         25년 {parseInt(curr.month.slice(-2))}월
       </div>
       
-      {/* 판매 요약 */}
-      <div className="mb-3">
-        <div className="font-medium text-gray-700 mb-1">■ 판매 요약</div>
-        <div className="flex justify-between pl-2">
-          <span className="text-gray-600">전체 매출액:</span>
-          <span className="font-medium">{formatNumber(curr.total_sales_amt / 1_000_000)}M</span>
-        </div>
-        <div className="flex justify-between pl-2">
-          <span className="text-gray-600">매출액 YOY:</span>
-          <span className="font-medium text-pink-500">{salesYoy}%</span>
-        </div>
-        <div className="pl-2 mt-1 text-gray-500">시즌별 판매 (당년):</div>
-        {SEASON_ORDER.slice().reverse().map((season) => (
-          <div key={season} className="flex items-center gap-1 pl-4 py-0.5">
-            <span 
-              className="w-2 h-2 rounded-sm flex-shrink-0"
-              style={{ backgroundColor: COLORS.curr[season] }}
-            />
-            <span className="text-gray-600">{season}:</span>
-            <span className="ml-auto">{formatNumber(curr[season].sales_amt / 1_000_000)}M</span>
-          </div>
-        ))}
-      </div>
-      
-      {/* 재고 요약 */}
-      <div className="border-t pt-2">
-        <div className="font-medium text-gray-700 mb-1">■ 재고 요약</div>
-        <div className="flex justify-between pl-2">
-          <span className="text-gray-600">전체 재고액:</span>
-          <span className="font-medium">{formatNumber(curr.total_stock_amt / 1_000_000)}M</span>
-        </div>
-        <div className="pl-2 mt-1 text-gray-500">시즌별 재고 (당년):</div>
-        {SEASON_ORDER.slice().reverse().map((season) => (
-          <div key={season} className="flex items-center gap-1 pl-4 py-0.5">
-            <span 
-              className="w-2 h-2 rounded-sm flex-shrink-0"
-              style={{ backgroundColor: COLORS.curr[season] }}
-            />
-            <span className="text-gray-600">{season}:</span>
-            <span className="ml-auto">{formatNumber(curr[season].stock_amt / 1_000_000)}M</span>
-          </div>
-        ))}
-        <div className="flex justify-between pl-2 mt-2 pt-2 border-t border-gray-200">
-          <span className="text-gray-600 font-medium">재고주수:</span>
-          <span className="font-medium text-blue-600">{totalStockWeeks}</span>
-        </div>
-      </div>
+      <table className="w-full">
+        <thead>
+          <tr className="text-gray-600 border-b">
+            <th className="text-left py-1 pr-3"></th>
+            <th className="text-right py-1 px-2">판매금액</th>
+            <th className="text-right py-1 px-2">재고금액</th>
+            <th className="text-right py-1 pl-2">재고주수</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, idx) => (
+            <tr 
+              key={row.name} 
+              className={idx === 0 ? "font-semibold border-b" : ""}
+            >
+              <td className="py-1 pr-3">
+                <div className="flex items-center gap-1.5">
+                  <span 
+                    className="w-2 h-2 rounded-sm flex-shrink-0"
+                    style={{ backgroundColor: row.color }}
+                  />
+                  <span>{row.name}</span>
+                </div>
+              </td>
+              <td className="text-right py-1 px-2">{fmtM(row.sale)}</td>
+              <td className="text-right py-1 px-2">{fmtM(row.stock)}</td>
+              <td className="text-right py-1 pl-2">{fmtWeeks(row.stock, row.sale)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 };
