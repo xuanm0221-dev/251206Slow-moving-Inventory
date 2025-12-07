@@ -769,8 +769,8 @@ export default function StagnantStockAnalysis({
         defaultOpen={false}
         headerAction={
           <div className="text-xs text-gray-500 text-right">
-            <div>2025년 기준: 당시즌 25N,25F,25S | 차기시즌 26N,26S,26F~ | 과시즌 그외(정체제외) | 과시즌中 정체재고, A상품 당월판매 ÷ 해당상품이 속하는 당월말 중분류 재고금액 {"<"} {thresholdPct}%</div>
-            <div>2024년 기준: 당시즌 24N,24F,24S | 차기시즌 25N,25S,25F~ | 과시즌 그외(정체제외) | 과시즌中 정체재고, A상품 당월판매 ÷ 해당상품이 속하는 당월말 중분류 재고금액 {"<"} {thresholdPct}%</div>
+            <div>25년 기준: 차기 26NSF, 당기 25NSF, 과시즌 = 나머지 | 24년 기준: 차기 25NSF, 당기 24NSF, 과시즌 = 나머지</div>
+            <div>정체재고: 과시즌 중 (당월판매 ÷ 중분류 기말재고) {"<"} {thresholdPct}%</div>
           </div>
         }
       >

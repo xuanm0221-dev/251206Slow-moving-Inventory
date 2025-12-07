@@ -642,7 +642,7 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
               dataKey="month" 
               tick={{ fontSize: 11, fill: "#6b7280" }}
               axisLine={{ stroke: "#d1d5db" }}
-              tickFormatter={(value) => value.slice(5)} // "2025-01" -> "01"
+              tickFormatter={(value) => `${value.slice(2, 4)}.${value.slice(5)}`} // "2025-01" -> "25.01"
             />
             {/* 재고금액용 Y축 - 전년대비:왼쪽, 매출액대비:오른쪽 */}
             <YAxis 
@@ -775,81 +775,88 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
 
       {/* 범례 */}
       <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        <div className="flex flex-wrap items-center gap-6 text-xs text-gray-600">
-          {mode === "전년대비" ? (
-            <>
-              <div className="flex items-center gap-3">
-                <span className="font-medium">당년-24년:</span>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.prev.과시즌 }}></span>
-                  <span>과시즌</span>
+        <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-gray-600">
+          {/* 왼쪽: 색상 범례 */}
+          <div className="flex flex-wrap items-center gap-6">
+            {mode === "전년대비" ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className="font-medium">당년-24년:</span>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.prev.과시즌 }}></span>
+                    <span>과시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.prev.당시즌 }}></span>
+                    <span>당시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.prev.차기시즌 }}></span>
+                    <span>차기시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.prev.정체재고 }}></span>
+                    <span>정체재고</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.prev.당시즌 }}></span>
-                  <span>당시즌</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-medium">당년-25년:</span>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.과시즌 }}></span>
+                    <span>과시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.당시즌 }}></span>
+                    <span>당시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.차기시즌 }}></span>
+                    <span>차기시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.정체재고 }}></span>
+                    <span>정체재고</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.prev.차기시즌 }}></span>
-                  <span>차기시즌</span>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className="font-medium">당년-판매(매출):</span>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.과시즌 }}></span>
+                    <span>과시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.당시즌 }}></span>
+                    <span>당시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.차기시즌 }}></span>
+                    <span>차기시즌</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.정체재고 }}></span>
+                    <span>정체재고</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.prev.정체재고 }}></span>
-                  <span>정체재고</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-medium">당년-재고:</span>
+                  <span className="text-gray-500">(동일 색상)</span>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="font-medium">당년-25년:</span>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.과시즌 }}></span>
-                  <span>과시즌</span>
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-0.5" style={{ backgroundColor: COLORS.yoy }}></span>
+                  <span>매출액 YOY</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.당시즌 }}></span>
-                  <span>당시즌</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.차기시즌 }}></span>
-                  <span>차기시즌</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.정체재고 }}></span>
-                  <span>정체재고</span>
-                </div>
-              </div>
-              {/* [전년대비 탭] YOY 범례 표시 안함 */}
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-3">
-                <span className="font-medium">당년-판매(매출):</span>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.과시즌 }}></span>
-                  <span>과시즌</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.당시즌 }}></span>
-                  <span>당시즌</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.차기시즌 }}></span>
-                  <span>차기시즌</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS.curr.정체재고 }}></span>
-                  <span>정체재고</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="font-medium">당년-재고:</span>
-                <span className="text-gray-500">(동일 색상)</span>
-              </div>
-              {/* [매출액대비 탭] 매출액 기준 YOY 범례 표시 */}
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-0.5" style={{ backgroundColor: COLORS.yoy }}></span>
-                <span>매출액 YOY</span>
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </div>
+          
+          {/* 오른쪽: 정체재고 기준 설명 */}
+          <div className="flex items-center gap-1.5 text-gray-500">
+            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS.curr.정체재고 }}></span>
+            <span>정체재고 = 과시즌 중 (당월판매 ÷ 중분류 기말재고) {"<"} 0.01%</span>
+          </div>
         </div>
       </div>
     </div>
