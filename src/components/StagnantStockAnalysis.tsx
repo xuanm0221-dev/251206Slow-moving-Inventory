@@ -9,6 +9,7 @@ import type {
   DetailTableData,
   StagnantStockItem,
   SortConfig,
+  SortKey,
   MidCategory,
   StagnantChannelTab,
   CategorySummary,
@@ -289,22 +290,26 @@ function calcStockWeeks(stockAmt: number, salesAmt: number, daysInMonth: number)
   return weeks.toLocaleString("ko-KR") + "주";
 }
 
-function DetailTable({ 
-  data, 
+function DetailTable({
+  data,
   dimensionTab,
   sortConfig,
   onSort,
   targetMonth,
   channelTab,
   getChannelData,
-}: { 
+  totalItemCount,
+  totalStockAmt,
+}: {
   data: DetailTableData;
   dimensionTab: DimensionTab;
   sortConfig: SortConfig;
-  onSort: (key: keyof StagnantStockItem) => void;
+  onSort: (key: SortKey) => void;
   targetMonth: string;
   channelTab: StagnantChannelTab;
   getChannelData: (item: StagnantStockItem, channel: StagnantChannelTab) => { stock_amt: number; stock_qty: number; sales_amt: number };
+  totalItemCount: number;  // 전체 품번 수 (4개 테이블 합계)
+  totalStockAmt: number;   // 전체 재고 금액
 }) {
   const daysInMonth = getDaysInMonth(targetMonth);
 
@@ -342,10 +347,26 @@ function DetailTable({
         ? "text-purple-700"
         : "text-amber-700";
 
+  // 재고주수 계산 함수 (숫자 반환 - 정렬용)
+  const calcStockWeeksNum = (item: StagnantStockItem): number => {
+    const channelData = getChannelData(item, channelTab);
+    if (channelData.sales_amt <= 0) return Infinity; // 판매0은 맨 뒤로
+    const weekSales = (channelData.sales_amt / daysInMonth) * 7;
+    if (weekSales <= 0) return Infinity;
+    return channelData.stock_amt / weekSales;
+  };
+
   // 정렬된 아이템
   const sortedItems = [...data.items].sort((a, b) => {
-    const aVal = a[sortConfig.key];
-    const bVal = b[sortConfig.key];
+    // stockWeeks는 계산값이므로 별도 처리
+    if (sortConfig.key === "stockWeeks") {
+      const aVal = calcStockWeeksNum(a);
+      const bVal = calcStockWeeksNum(b);
+      return sortConfig.direction === "asc" ? aVal - bVal : bVal - aVal;
+    }
+    
+    const aVal = a[sortConfig.key as keyof StagnantStockItem];
+    const bVal = b[sortConfig.key as keyof StagnantStockItem];
     if (typeof aVal === "number" && typeof bVal === "number") {
       return sortConfig.direction === "asc" ? aVal - bVal : bVal - aVal;
     }
@@ -355,7 +376,7 @@ function DetailTable({
   });
 
   // 정렬 아이콘
-  const SortIcon = ({ columnKey }: { columnKey: keyof StagnantStockItem }) => {
+  const SortIcon = ({ columnKey }: { columnKey: SortKey }) => {
     if (sortConfig.key !== columnKey) {
       return <span className="text-gray-300 ml-1">↕</span>;
     }
@@ -376,7 +397,7 @@ function DetailTable({
     <div className={`rounded-lg border ${borderColor} ${bgColor} overflow-hidden`}>
       <div className="p-3 border-b ${borderColor}">
         <h4 className={`text-md font-bold ${titleColor}`}>
-          {data.title} ({formatNumber(data.items.length)}건)
+          {data.title === "정체재고 - 전체" ? "정체재고" : data.title} | 전체 {formatNumber(totalItemCount)}개 중 {formatNumber(data.items.length)}개 표시 | 재고 {formatAmountM(data.totalRow.stock_amt)} ({formatAmountM(totalStockAmt)} 중 {totalStockAmt > 0 ? formatPercent((data.totalRow.stock_amt / totalStockAmt) * 100, 1) : "0%"})
         </h4>
       </div>
       
@@ -401,7 +422,13 @@ function DetailTable({
                   시즌
                   <SortIcon columnKey="season" />
                 </th>
-                <th className="text-right py-2 px-2 font-medium text-gray-600">재고주수</th>
+                <th 
+                  className="text-right py-2 px-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
+                  onClick={() => onSort("stockWeeks")}
+                >
+                  재고주수
+                  <SortIcon columnKey="stockWeeks" />
+                </th>
                 <th 
                   className="text-right py-2 px-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => onSort("stock_qty")}
@@ -427,7 +454,7 @@ function DetailTable({
                   className="text-right py-2 px-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100"
                   onClick={() => onSort("ratio")}
                 >
-                  비율
+                  정체율계산
                   <SortIcon columnKey="ratio" />
                 </th>
                 <th className="text-center py-2 px-2 font-medium text-gray-600">상태</th>
@@ -435,7 +462,7 @@ function DetailTable({
               {/* 합계 행 - 헤더에 고정 (채널별 데이터 사용) */}
               <tr className="bg-gray-100 font-semibold border-b border-gray-300">
                 <td className="py-2 px-2 text-gray-700">(Total)</td>
-                <td className="py-2 px-2 text-gray-500">-</td>
+                <td className="py-2 px-2 text-gray-700">{formatNumber(data.items.length)}건</td>
                 <td className="py-2 px-2 text-gray-500">-</td>
                 <td className="py-2 px-2 text-gray-500">-</td>
                 <td className="text-right py-2 px-2 text-gray-900">{calcStockWeeks(data.totalRow.stock_amt, data.totalRow.sales_tag_amt, daysInMonth)}</td>
@@ -591,15 +618,17 @@ export default function StagnantStockAnalysis({
   };
 
   // 채널별 카테고리 집계 함수
-  // totalBaseStockAmt: 전체대비% 계산 시 사용할 기준 금액 (미지정 시 items 합계 사용)
+  // categoryTotalStockAmtMap: 각 카테고리별 전체 재고 금액 맵 (아이템별 정체+정상=100% 계산용)
+  // totalBaseStockAmt: '전체' 행의 비율 계산용 전체 재고 금액
   const aggregateByCategoryForChannel = (
     items: StagnantStockItem[],
     channel: StagnantChannelTab,
+    categoryTotalStockAmtMap?: Map<string, number>,
     totalBaseStockAmt?: number
   ): CategorySummary[] => {
     const categories: MidCategory[] = ["전체", "신발", "모자", "가방", "기타"];
     
-    // 전체 재고금액 계산 (채널 기준) - 기준 금액이 없으면 items 합계 사용
+    // 전체 재고금액 계산 (채널 기준) - '전체' 행의 비율 계산용
     const totalChannelStockAmt = totalBaseStockAmt ?? items.reduce((sum, item) => {
       const channelData = getChannelData(item, channel);
       return sum + channelData.stock_amt;
@@ -626,10 +655,24 @@ export default function StagnantStockAnalysis({
           .map(item => item.dimensionKey)
       ).size;
       
+      // 비율 계산: '전체' 행은 전체 재고 금액 기준, 개별 카테고리는 해당 카테고리 전체 재고 금액 기준
+      let stock_amt_pct = 0;
+      if (category === "전체") {
+        // '전체' 행: 전체 재고 금액 대비 비율
+        stock_amt_pct = totalChannelStockAmt > 0 ? (stock_amt / totalChannelStockAmt) * 100 : 0;
+      } else if (categoryTotalStockAmtMap) {
+        // 개별 카테고리: 해당 카테고리 전체 재고 금액 대비 비율 (정체+정상=100%)
+        const categoryTotal = categoryTotalStockAmtMap.get(category) || 0;
+        stock_amt_pct = categoryTotal > 0 ? (stock_amt / categoryTotal) * 100 : 0;
+      } else {
+        // categoryTotalStockAmtMap이 없으면 전체 재고 금액 대비 비율 (기존 방식)
+        stock_amt_pct = totalChannelStockAmt > 0 ? (stock_amt / totalChannelStockAmt) * 100 : 0;
+      }
+      
       return {
         category,
         stock_amt,
-        stock_amt_pct: totalChannelStockAmt > 0 ? (stock_amt / totalChannelStockAmt) * 100 : 0,
+        stock_amt_pct,
         stock_qty,
         item_count,
         sales_tag_amt,
@@ -638,14 +681,16 @@ export default function StagnantStockAnalysis({
   };
 
   // 채널별 요약 박스 데이터 생성
-  // totalBaseStockAmt: 전체대비% 계산 시 사용할 기준 금액 (전체 재고 금액)
+  // categoryTotalStockAmtMap: 각 카테고리별 전체 재고 금액 맵 (아이템별 정체+정상=100% 계산용)
+  // totalBaseStockAmt: '전체' 행의 비율 계산용 전체 재고 금액
   const createChannelSummaryBox = (
     title: string,
     items: StagnantStockItem[],
     channel: StagnantChannelTab,
+    categoryTotalStockAmtMap?: Map<string, number>,
     totalBaseStockAmt?: number
   ): SummaryBoxData => {
-    const categories = aggregateByCategoryForChannel(items, channel, totalBaseStockAmt);
+    const categories = aggregateByCategoryForChannel(items, channel, categoryTotalStockAmtMap, totalBaseStockAmt);
     const total = categories.find(c => c.category === "전체")!;
     
     return {
@@ -781,7 +826,7 @@ export default function StagnantStockAnalysis({
   }, [fetchData, targetMonth, dimensionTab, thresholdPct]);
 
   // 정렬 핸들러
-  const handleSort = (key: keyof StagnantStockItem) => {
+  const handleSort = (key: SortKey) => {
     setSortConfig(prev => ({
       key,
       direction: prev.key === key && prev.direction === "desc" ? "asc" : "desc",
@@ -902,15 +947,75 @@ export default function StagnantStockAnalysis({
             {/* 요약 박스 3개 (채널별 집계) */}
             <div className="grid md:grid-cols-3 gap-4 mb-6">
               {channelTab === "전체" ? (
-                <>
-                  <SummaryBox data={data.totalSummary} isTotal={true} />
-                  <SummaryBox data={data.stagnantSummary} />
-                  <SummaryBox data={data.normalSummary} />
-                </>
+                (() => {
+                  // 전체 채널: 카테고리별 전체 재고 금액 맵 생성 (아이템별 정체+정상=100% 계산용)
+                  const allItems = [
+                    ...data.stagnantDetail.items,
+                    ...data.currentSeasonDetail.items,
+                    ...data.nextSeasonDetail.items,
+                    ...data.pastSeasonDetail.items,
+                  ];
+                  
+                  const categoryTotalMap = new Map<string, number>();
+                  const categories = ["신발", "모자", "가방", "기타"];
+                  categories.forEach(cat => {
+                    const catItems = allItems.filter(item => item.mid_category_kr === cat);
+                    const catTotal = catItems.reduce((sum, item) => sum + item.stock_amt, 0);
+                    categoryTotalMap.set(cat, catTotal);
+                  });
+                  
+                  const totalStockAmt = allItems.reduce((sum, item) => sum + item.stock_amt, 0);
+                  
+                  // 정체재고/정상재고 요약 데이터를 카테고리별 전체 기준으로 재계산
+                  const recalcSummary = (summary: SummaryBoxData): SummaryBoxData => {
+                    const newCategories = summary.categories.map(cat => {
+                      if (cat.category === "전체") {
+                        // '전체' 행은 전체 재고 대비 비율
+                        return {
+                          ...cat,
+                          stock_amt_pct: totalStockAmt > 0 ? (cat.stock_amt / totalStockAmt) * 100 : 0,
+                        };
+                      } else {
+                        // 개별 카테고리는 해당 카테고리 전체 재고 대비 비율
+                        const catTotal = categoryTotalMap.get(cat.category) || 0;
+                        return {
+                          ...cat,
+                          stock_amt_pct: catTotal > 0 ? (cat.stock_amt / catTotal) * 100 : 0,
+                        };
+                      }
+                    });
+                    return {
+                      ...summary,
+                      categories: newCategories,
+                      total: newCategories.find(c => c.category === "전체")!,
+                    };
+                  };
+                  
+                  return (
+                    <>
+                      <SummaryBox data={data.totalSummary} isTotal={true} />
+                      <SummaryBox data={recalcSummary(data.stagnantSummary)} />
+                      <SummaryBox data={recalcSummary(data.normalSummary)} />
+                    </>
+                  );
+                })()
               ) : (
                 (() => {
-                  // 전체 재고 금액 계산 (채널 기준) - 정체재고/정상재고의 전체대비% 계산용
+                  // FR/OR 채널: 카테고리별 전체 재고 금액 맵 생성
                   const allItems = [...data.stagnantDetail.items, ...data.currentSeasonDetail.items, ...data.nextSeasonDetail.items, ...data.pastSeasonDetail.items];
+                  
+                  // 카테고리별 전체 재고 금액 계산 (해당 채널 기준)
+                  const categoryTotalMap = new Map<string, number>();
+                  const categories = ["신발", "모자", "가방", "기타"];
+                  categories.forEach(cat => {
+                    const catItems = allItems.filter(item => item.mid_category_kr === cat);
+                    const catTotal = catItems.reduce((sum, item) => {
+                      const channelData = getChannelData(item, channelTab);
+                      return sum + channelData.stock_amt;
+                    }, 0);
+                    categoryTotalMap.set(cat, catTotal);
+                  });
+                  
                   const totalChannelStockAmt = allItems.reduce((sum, item) => {
                     const channelData = getChannelData(item, channelTab);
                     return sum + channelData.stock_amt;
@@ -932,7 +1037,8 @@ export default function StagnantStockAnalysis({
                           "정체재고", 
                           data.stagnantDetail.items,
                           channelTab,
-                          totalChannelStockAmt  // 전체 재고 금액 기준으로 % 계산
+                          categoryTotalMap,  // 카테고리별 전체 재고 금액 맵
+                          totalChannelStockAmt  // '전체' 행 비율 계산용
                         )} 
                       />
                       <SummaryBox 
@@ -940,7 +1046,8 @@ export default function StagnantStockAnalysis({
                           "정상재고", 
                           [...data.currentSeasonDetail.items, ...data.nextSeasonDetail.items, ...data.pastSeasonDetail.items],
                           channelTab,
-                          totalChannelStockAmt  // 전체 재고 금액 기준으로 % 계산
+                          categoryTotalMap,  // 카테고리별 전체 재고 금액 맵
+                          totalChannelStockAmt  // '전체' 행 비율 계산용
                         )} 
                       />
                     </>
@@ -999,59 +1106,103 @@ export default function StagnantStockAnalysis({
             </div>
 
             {/* 상세 테이블 4개 (아이템 탭 + 채널 탭 + 검색어 + 시즌 필터로 제어) */}
-            <div className="space-y-4">
-              {/* 정체재고 - 전체 (시즌 필터: 전체 시즌 또는 정체재고일 때 표시) */}
-              {(seasonFilter === "전체 시즌" || seasonFilter === "정체재고") && (
-                <DetailTable 
-                  data={filterDetailTableByItemAndChannel(data.stagnantDetail)} 
-                  dimensionTab={dimensionTab}
-                  sortConfig={sortConfig}
-                  onSort={handleSort}
-                  targetMonth={targetMonth}
-                  channelTab={channelTab}
-                  getChannelData={getChannelData}
-                />
-              )}
+            {(() => {
+              // 전체 품번 수 및 전체 재고 금액 계산 (채널별)
+              const allDetailItems = [
+                ...data.stagnantDetail.items,
+                ...data.currentSeasonDetail.items,
+                ...data.nextSeasonDetail.items,
+                ...data.pastSeasonDetail.items,
+              ];
               
-              {/* 당시즌 정상재고 (시즌 필터: 전체 시즌 또는 당시즌일 때 표시) */}
-              {(seasonFilter === "전체 시즌" || seasonFilter === "당시즌") && (
-                <DetailTable 
-                  data={filterDetailTableByItemAndChannel(data.currentSeasonDetail)} 
-                  dimensionTab={dimensionTab}
-                  sortConfig={sortConfig}
-                  onSort={handleSort}
-                  targetMonth={targetMonth}
-                  channelTab={channelTab}
-                  getChannelData={getChannelData}
-                />
-              )}
+              // 아이템 탭 필터링 적용
+              const filteredAllItems = itemTab === "ACC합계" 
+                ? allDetailItems 
+                : allDetailItems.filter(item => item.mid_category_kr === itemTab);
               
-              {/* 차기시즌 정상재고 (시즌 필터: 전체 시즌 또는 차기시즌일 때 표시) */}
-              {(seasonFilter === "전체 시즌" || seasonFilter === "차기시즌") && (
-                <DetailTable 
-                  data={filterDetailTableByItemAndChannel(data.nextSeasonDetail)} 
-                  dimensionTab={dimensionTab}
-                  sortConfig={sortConfig}
-                  onSort={handleSort}
-                  targetMonth={targetMonth}
-                  channelTab={channelTab}
-                  getChannelData={getChannelData}
-                />
-              )}
+              // 채널 필터링 적용
+              const channelFilteredItems = channelTab === "전체"
+                ? filteredAllItems
+                : filteredAllItems.filter(item => getChannelData(item, channelTab).stock_amt > 0);
               
-              {/* 과시즌 정상재고 (시즌 필터: 전체 시즌 또는 과시즌일 때 표시) */}
-              {(seasonFilter === "전체 시즌" || seasonFilter === "과시즌") && (
-                <DetailTable 
-                  data={filterDetailTableByItemAndChannel(data.pastSeasonDetail)} 
-                  dimensionTab={dimensionTab}
-                  sortConfig={sortConfig}
-                  onSort={handleSort}
-                  targetMonth={targetMonth}
-                  channelTab={channelTab}
-                  getChannelData={getChannelData}
-                />
-              )}
-            </div>
+              // 검색어 필터링 적용
+              const searchFilteredItems = searchQuery.trim()
+                ? channelFilteredItems.filter(item => 
+                    item.prdt_cd.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+                    item.prdt_nm.toLowerCase().includes(searchQuery.trim().toLowerCase())
+                  )
+                : channelFilteredItems;
+              
+              const totalItemCount = searchFilteredItems.length;
+              const totalStockAmt = searchFilteredItems.reduce((sum, item) => {
+                const channelData = getChannelData(item, channelTab);
+                return sum + channelData.stock_amt;
+              }, 0);
+
+              return (
+                <div className="space-y-4">
+                  {/* 정체재고 - 전체 (시즌 필터: 전체 시즌 또는 정체재고일 때 표시) */}
+                  {(seasonFilter === "전체 시즌" || seasonFilter === "정체재고") && (
+                    <DetailTable 
+                      data={filterDetailTableByItemAndChannel(data.stagnantDetail)} 
+                      dimensionTab={dimensionTab}
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                      targetMonth={targetMonth}
+                      channelTab={channelTab}
+                      getChannelData={getChannelData}
+                      totalItemCount={totalItemCount}
+                      totalStockAmt={totalStockAmt}
+                    />
+                  )}
+                  
+                  {/* 당시즌 정상재고 (시즌 필터: 전체 시즌 또는 당시즌일 때 표시) */}
+                  {(seasonFilter === "전체 시즌" || seasonFilter === "당시즌") && (
+                    <DetailTable 
+                      data={filterDetailTableByItemAndChannel(data.currentSeasonDetail)} 
+                      dimensionTab={dimensionTab}
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                      targetMonth={targetMonth}
+                      channelTab={channelTab}
+                      getChannelData={getChannelData}
+                      totalItemCount={totalItemCount}
+                      totalStockAmt={totalStockAmt}
+                    />
+                  )}
+                  
+                  {/* 차기시즌 정상재고 (시즌 필터: 전체 시즌 또는 차기시즌일 때 표시) */}
+                  {(seasonFilter === "전체 시즌" || seasonFilter === "차기시즌") && (
+                    <DetailTable 
+                      data={filterDetailTableByItemAndChannel(data.nextSeasonDetail)} 
+                      dimensionTab={dimensionTab}
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                      targetMonth={targetMonth}
+                      channelTab={channelTab}
+                      getChannelData={getChannelData}
+                      totalItemCount={totalItemCount}
+                      totalStockAmt={totalStockAmt}
+                    />
+                  )}
+                  
+                  {/* 과시즌 정상재고 (시즌 필터: 전체 시즌 또는 과시즌일 때 표시) */}
+                  {(seasonFilter === "전체 시즌" || seasonFilter === "과시즌") && (
+                    <DetailTable 
+                      data={filterDetailTableByItemAndChannel(data.pastSeasonDetail)} 
+                      dimensionTab={dimensionTab}
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                      targetMonth={targetMonth}
+                      channelTab={channelTab}
+                      getChannelData={getChannelData}
+                      totalItemCount={totalItemCount}
+                      totalStockAmt={totalStockAmt}
+                    />
+                  )}
+                </div>
+              );
+            })()}
 
           </>
         )}

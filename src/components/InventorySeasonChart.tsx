@@ -164,24 +164,48 @@ const YoYTooltip = ({ active, payload, label, data2024, data2025 }: YoYTooltipPr
       </div>
       <div className="border-t pt-2">
         <div className="font-medium text-gray-700 mb-2">시즌별 상세 (당년 재고 기준):</div>
-        {SEASON_ORDER.slice().reverse().map((season) => {
-          const seasonData = curr[season];
-          const stockWeeks = calcStockWeeks(seasonData.stock_amt, seasonData.sales_amt, daysInMonth);
-          return (
-            <div key={season} className="flex items-center gap-2 py-0.5">
-              <span 
-                className="w-3 h-3 rounded-sm flex-shrink-0"
-                style={{ backgroundColor: COLORS.curr[season] }}
-              />
-              <span className="text-gray-600 w-16">{season}:</span>
-              <span className="flex-1 text-right">
-                재고 {formatNumber(seasonData.stock_amt / 1_000_000)}M / 
-                매출 {formatNumber(seasonData.sales_amt / 1_000_000)}M / 
-                {stockWeeks}
-              </span>
-            </div>
-          );
-        })}
+        <table className="w-full">
+          <thead>
+            <tr className="text-gray-600 border-b">
+              <th className="text-left py-1 pr-2"></th>
+              <th className="text-right py-1 px-2">당년</th>
+              <th className="text-right py-1 px-2">전년</th>
+              <th className="text-right py-1 pl-2">YOY</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(["정체재고", "차기시즌", "당시즌", "과시즌"] as SeasonGroup[]).map((season) => {
+              const currSeasonData = curr[season];
+              const prevSeasonData = prev?.[season];
+              const currAmt = currSeasonData?.stock_amt || 0;
+              const prevAmt = prevSeasonData?.stock_amt || 0;
+              const seasonYoy = prevAmt > 0 ? ((currAmt / prevAmt) * 100).toFixed(1) : "-";
+              
+              return (
+                <tr key={season}>
+                  <td className="py-1 pr-2">
+                    <div className="flex items-center gap-1.5">
+                      <span 
+                        className="w-2 h-2 rounded-sm flex-shrink-0"
+                        style={{ backgroundColor: COLORS.curr[season] }}
+                      />
+                      <span className="text-gray-600">{season}</span>
+                    </div>
+                  </td>
+                  <td className="text-right py-1 px-2 font-medium">
+                    {formatNumber(currAmt / 1_000_000)}M
+                  </td>
+                  <td className="text-right py-1 px-2">
+                    {formatNumber(prevAmt / 1_000_000)}M
+                  </td>
+                  <td className="text-right py-1 pl-2 text-pink-500">
+                    {seasonYoy === "-" ? "-" : `${seasonYoy}%`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -882,7 +906,7 @@ export default function InventorySeasonChart({ brand, dimensionTab = "스타일"
           </div>
           
           {/* 오른쪽: 정체재고 기준 설명 */}
-          <div className="flex items-center gap-1.5 text-gray-500">
+          <div className="flex items-center gap-1.5 text-red-700 font-medium">
             <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS.curr.정체재고 }}></span>
             <span>정체재고 = 과시즌 중 (당월판매 ÷ 중분류 기말재고) {"<"} {thresholdPct}%</span>
           </div>

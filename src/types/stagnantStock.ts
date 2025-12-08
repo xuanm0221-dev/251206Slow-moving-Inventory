@@ -113,9 +113,11 @@ export interface StagnantStockRequest {
   thresholdPct: number;    // 0.01 (%)
 }
 
-// 정렬 설정
+// 정렬 설정 (stockWeeks는 계산값이므로 별도 추가)
+export type SortKey = keyof StagnantStockItem | "stockWeeks";
+
 export interface SortConfig {
-  key: keyof StagnantStockItem;
+  key: SortKey;
   direction: "asc" | "desc";
 }
 
